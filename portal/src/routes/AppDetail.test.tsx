@@ -283,3 +283,40 @@ describe('AppDetail — token configuration', () => {
     expect(writeText).toHaveBeenCalledWith('header.payload.signature');
   });
 });
+
+describe('AppDetail — app roles', () => {
+  it('offers the member types a role can be held by, defaulting to applications', async () => {
+    const posted: unknown[] = [];
+    installFetch(({ method, path, body }) => {
+      if (method === 'GET' && path === `/admin/api/apps/${APP_ID}`) return { body: app() };
+      if (method === 'POST' && path === `/admin/api/apps/${APP_ID}/roles`) {
+        posted.push(body);
+        return {
+          status: 201,
+          body: {
+            id: 'r-new',
+            value: 'Tasks.Read',
+            displayName: null,
+            allowedMemberTypes: ['User'],
+            isEnabled: true,
+          },
+        };
+      }
+      return undefined;
+    });
+    renderDetail();
+
+    await userEvent.click(await screen.findByRole('tab', { name: 'App roles' }));
+    await userEvent.click(await screen.findByRole('button', { name: '＋ Add role' }));
+
+    // Without a choice the portal keeps the admin API's long-standing assumption.
+    const memberTypes = await screen.findByLabelText('Member types');
+    expect(memberTypes).toHaveValue('Applications');
+
+    await userEvent.type(screen.getByLabelText('Role value'), 'Tasks.Read');
+    await userEvent.selectOptions(memberTypes, 'Users and groups');
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(posted).toEqual([{ value: 'Tasks.Read', allowedMemberTypes: ['User'] }]);
+  });
+});

@@ -174,8 +174,10 @@ export const api = {
   removeScope: (id: string, scopeId: string) =>
     request<void>('DELETE', `${ADMIN}/apps/${id}/scopes/${scopeId}`),
 
-  addRole: (id: string, body: { value: string; displayName?: string }) =>
-    request<AppRole>('POST', `${ADMIN}/apps/${id}/roles`, body),
+  addRole: (
+    id: string,
+    body: { value: string; displayName?: string; allowedMemberTypes?: string[] },
+  ) => request<AppRole>('POST', `${ADMIN}/apps/${id}/roles`, body),
   updateRole: (id: string, roleId: string, body: { isEnabled?: boolean }) =>
     request<AppRole>('PATCH', `${ADMIN}/apps/${id}/roles/${roleId}`, body),
   removeRole: (id: string, roleId: string) =>

@@ -570,11 +570,24 @@ function ScopeList({ app, onChange }: { app: App; onChange: () => void }): JSX.E
 
 // --- App roles -----------------------------------------------------------------------------------
 
+/**
+ * Who a role can be held by, in the three combinations Entra offers. `Application` is first and is
+ * the default, because that is what the admin API has always assumed for a role created without an
+ * explicit choice — so the portal keeps behaving as it did for anyone who does not touch this.
+ * A role that omits `User` cannot be assigned to a user or a group under **Users and groups**.
+ */
+const MEMBER_TYPE_OPTIONS: { label: string; value: string[] }[] = [
+  { label: 'Applications', value: ['Application'] },
+  { label: 'Users and groups', value: ['User'] },
+  { label: 'Both', value: ['User', 'Application'] },
+];
+
 function AppRoleList({ app, onChange }: { app: App; onChange: () => void }): JSX.Element {
   const { toast } = useShell();
   const [adding, setAdding] = useState(false);
   const [value, setValue] = useState('');
   const [display, setDisplay] = useState('');
+  const [memberTypes, setMemberTypes] = useState(MEMBER_TYPE_OPTIONS[0]!.label);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
 
@@ -582,13 +595,18 @@ function AppRoleList({ app, onChange }: { app: App; onChange: () => void }): JSX
     setBusy(true);
     setError(undefined);
     try {
+      const chosen =
+        MEMBER_TYPE_OPTIONS.find((option) => option.label === memberTypes) ??
+        MEMBER_TYPE_OPTIONS[0]!;
       await api.addRole(app.id, {
         value: value.trim(),
+        allowedMemberTypes: chosen.value,
         ...(display.trim() ? { displayName: display.trim() } : {}),
       });
       toast('App role added.');
       setValue('');
       setDisplay('');
+      setMemberTypes(MEMBER_TYPE_OPTIONS[0]!.label);
       setAdding(false);
       onChange();
     } catch (err) {
@@ -695,6 +713,17 @@ function AppRoleList({ app, onChange }: { app: App; onChange: () => void }): JSX
             placeholder="Display name (optional)"
             aria-label="Role display name"
           />
+          <Select
+            aria-label="Member types"
+            value={memberTypes}
+            onChange={(e) => setMemberTypes(e.target.value)}
+          >
+            {MEMBER_TYPE_OPTIONS.map((option) => (
+              <option key={option.label} value={option.label}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
           <Button onClick={() => void add()} busy={busy} disabled={!value.trim()}>
             Add
           </Button>
