@@ -4,6 +4,10 @@ import { TENANT_ENDPOINTS, tenantRoute } from '../http/pathmap.js';
 import { tenantGuard } from '../http/tenant.js';
 import type { Store } from '../store/store.js';
 import type { DeviceCode, Session, User } from '../store/types.js';
+import {
+  assignmentRequiredDescription,
+  isAssignmentRequiredAndMissing,
+} from './assignmentRequired.js';
 import { createSignedStateSigner, type SignedStateSigner } from './authState.js';
 import { field, type Body } from './clientAuth.js';
 import { normalizeUserCode } from './deviceCode.js';
@@ -387,6 +391,13 @@ function handleDecide(
 
   const decision = field(body, DEVICE_FIELDS.decision);
   if (decision === 'approve') {
+    const app = ctx.store.apps.getByAppId(row.appId);
+    if (app && isAssignmentRequiredAndMissing(app, sess.user, ctx.store)) {
+      ctx.store.deviceCodes.deny(row.userCode);
+      errorPage(reply, ctx, 'Access denied', assignmentRequiredDescription(app));
+      return;
+    }
+
     const approved = ctx.store.deviceCodes.approve(row.userCode, sess.session.userId);
     if (!approved) {
       errorPage(reply, ctx, 'Code not available', 'This code was already used.');

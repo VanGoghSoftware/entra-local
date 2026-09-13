@@ -1173,3 +1173,140 @@ describe('admin-created app signs in (#11 criterion 9)', () => {
     expect(body.id_token).toMatch(/.+/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// App role assignments — "assignment required" (AADSTS50105)
+// ---------------------------------------------------------------------------
+describe('assignment required (app role assignments)', () => {
+  /** Turn the switch on for the SPA client. */
+  function requireAssignment(app: TestApp): void {
+    app.app.store.apps.update(SPA, { appRoleAssignmentRequired: true });
+  }
+
+  /** Give `userId` a User-type role on the SPA client; returns the assignment id. */
+  function assignSpaRole(app: TestApp, userId: string): string {
+    const role = app.app.store.apps.addRole(SPA, {
+      value: 'App.Access',
+      allowedMemberTypes: 'User',
+    });
+    return app.app.store.appRoleAssignments.create({
+      appId: SPA,
+      roleId: role.id,
+      principalType: 'User',
+      principalId: userId,
+    }).id;
+  }
+
+  it('interactive sign-in by an unassigned user redirects back with access_denied + AADSTS50105', async () => {
+    ctx = await buildTestApp();
+    requireAssignment(ctx);
+    const params = {
+      client_id: SPA,
+      response_type: 'code',
+      redirect_uri: REDIRECT,
+      scope: `openid ${SPA_SCOPE}`,
+      state: 'gate-state',
+      code_challenge: s256('verifier-gate'),
+      code_challenge_method: 'S256',
+    };
+    const page = await ctx.inject({ method: 'GET', url: authorizeUrl(params) });
+    expect(page.statusCode).toBe(200);
+    const submit = await ctx.inject({
+      method: 'POST',
+      url: AUTHORIZE_PATH,
+      headers: FORM_HEADERS,
+      payload: form({ __el_state: extractSignedState(page.body), __el_user: SEED.userAliceId }),
+    });
+    expect(submit.statusCode).toBe(302);
+    const url = new URL(submit.headers.location as string);
+    const expectedRedirect = new URL(REDIRECT);
+    expect(url.origin).toBe(expectedRedirect.origin);
+    expect(url.pathname).toBe(expectedRedirect.pathname);
+    expect(url.searchParams.get('error')).toBe('access_denied');
+    expect(url.searchParams.get('error_description')).toContain('AADSTS50105');
+    expect(url.searchParams.get('state')).toBe('gate-state');
+    expect(url.searchParams.get('code')).toBeNull();
+  });
+
+  it('prompt=none with a session but no assignment redirects back with access_denied', async () => {
+    ctx = await buildTestApp();
+    const { cookie } = await signInAndGetCode(ctx, { codeChallenge: s256('v1') });
+    requireAssignment(ctx);
+    const res = await ctx.inject({
+      method: 'GET',
+      url: authorizeUrl({
+        client_id: SPA,
+        response_type: 'code',
+        redirect_uri: REDIRECT,
+        scope: `openid ${SPA_SCOPE}`,
+        prompt: 'none',
+        state: 'silent',
+        code_challenge: s256('v2'),
+        code_challenge_method: 'S256',
+      }),
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(302);
+    const url = new URL(res.headers.location as string);
+    expect(url.searchParams.get('error')).toBe('access_denied');
+    expect(url.searchParams.get('error_description')).toContain('AADSTS50105');
+    expect(url.searchParams.get('state')).toBe('silent');
+  });
+
+  it('an assigned user signs in normally; removing the assignment before redemption fails the code with 50105', async () => {
+    ctx = await buildTestApp();
+    requireAssignment(ctx);
+    const assignmentId = assignSpaRole(ctx, SEED.userAliceId);
+
+    const verifier = randomBytes(32).toString('base64url');
+    const { code } = await signInAndGetCode(ctx, { codeChallenge: s256(verifier) });
+    expect(code).not.toBe('');
+
+    ctx.app.store.appRoleAssignments.remove(SPA, assignmentId);
+    const token = await ctx.inject({
+      method: 'POST',
+      url: TOKEN_PATH,
+      headers: FORM_HEADERS,
+      payload: form({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: REDIRECT,
+        client_id: SPA,
+        code_verifier: verifier,
+      }),
+    });
+    expect(token.statusCode).toBe(400);
+    const body = token.json() as {
+      error: string;
+      error_codes: number[];
+      error_description: string;
+    };
+    expect(body.error).toBe('invalid_grant');
+    expect(body.error_codes).toEqual([50105]);
+    expect(body.error_description).toContain('AADSTS50105');
+  });
+
+  it('with the switch off (default) an unassigned user signs in and simply gets no roles claim', async () => {
+    ctx = await buildTestApp();
+    const verifier = randomBytes(32).toString('base64url');
+    const { code } = await signInAndGetCode(ctx, { codeChallenge: s256(verifier) });
+    const token = await ctx.inject({
+      method: 'POST',
+      url: TOKEN_PATH,
+      headers: FORM_HEADERS,
+      payload: form({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: REDIRECT,
+        client_id: SPA,
+        code_verifier: verifier,
+      }),
+    });
+    expect(token.statusCode).toBe(200);
+    const idToken = (token.json() as { id_token: string }).id_token;
+    const payload = JSON.parse(
+      Buffer.from(idToken.split('.')[1]!, 'base64url').toString('utf8'),
+    ) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('roles');
+  });
+});

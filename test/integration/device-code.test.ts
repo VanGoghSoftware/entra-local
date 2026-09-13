@@ -531,3 +531,48 @@ describe('device_code token conformance (criterion 17)', () => {
     expect(id.payload.preferred_username).toBe('alice@entralocal.dev');
   });
 });
+
+describe('assignment required (app role assignments)', () => {
+  it('approval by an unassigned user denies the device code; the poll returns access_denied', async () => {
+    ctx = await buildTestApp();
+    ctx.app.store.apps.update(SPA, { appRoleAssignmentRequired: true });
+    const da = await newDeviceCode(ctx, 'openid');
+
+    const lookup = await ctx.inject({
+      method: 'POST',
+      url: VERIFY_PATH,
+      headers: FORM_HEADERS,
+      payload: form({ __el_step: 'lookup', user_code: da.user_code }),
+    });
+    const signin = await ctx.inject({
+      method: 'POST',
+      url: VERIFY_PATH,
+      headers: FORM_HEADERS,
+      payload: form({
+        __el_step: 'signin',
+        __el_state: extractState(lookup.body),
+        __el_user: SEED.userAliceId,
+        user_code: da.user_code,
+      }),
+    });
+    expect(signin.statusCode).toBe(200);
+    const cookie = firstCookie(signin);
+    const decide = await ctx.inject({
+      method: 'POST',
+      url: VERIFY_PATH,
+      headers: { ...FORM_HEADERS, cookie },
+      payload: form({
+        __el_step: 'decide',
+        __el_decision: 'approve',
+        __el_state: extractState(signin.body),
+      }),
+    });
+    expect(decide.statusCode).toBe(200);
+    expect(decide.body).toContain('AADSTS50105');
+    expect(ctx.app.store.deviceCodes.getByUserCode(da.user_code)!.status).toBe('denied');
+
+    const polled = await poll(ctx, { client_id: SPA, device_code: da.device_code });
+    expect(polled.statusCode).toBe(400);
+    expect((polled.json() as { error: string }).error).toBe('access_denied');
+  });
+});

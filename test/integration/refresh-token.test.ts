@@ -412,3 +412,36 @@ describe('token conformance (criterion 10)', () => {
     expect(clientInfo.utid).toBe(T);
   });
 });
+
+describe('assignment required (app role assignments)', () => {
+  it('refuses the refresh grant with invalid_grant + 50105 when the app requires an assignment the user lacks', async () => {
+    ctx = await buildTestApp();
+    const token = issueRefresh(ctx);
+    ctx.app.store.apps.update(SPA, { appRoleAssignmentRequired: true });
+
+    const refused = await redeem(ctx, { refresh_token: token, client_id: SPA });
+    expect(refused.statusCode).toBe(400);
+    const body = refused.json() as { error: string; error_codes: number[] };
+    expect(body.error).toBe('invalid_grant');
+    expect(body.error_codes).toEqual([50105]);
+
+    // Assign a role and the next refresh succeeds and carries it.
+    const role = ctx.app.store.apps.addRole(SPA, {
+      value: 'App.Access',
+      allowedMemberTypes: 'User',
+    });
+    ctx.app.store.appRoleAssignments.create({
+      appId: SPA,
+      roleId: role.id,
+      principalType: 'User',
+      principalId: SEED.userAliceId,
+    });
+    const ok = await redeem(ctx, { refresh_token: issueRefresh(ctx), client_id: SPA });
+    expect(ok.statusCode).toBe(200);
+    const idToken = (ok.json() as { id_token: string }).id_token;
+    const payload = JSON.parse(
+      Buffer.from(idToken.split('.')[1]!, 'base64url').toString('utf8'),
+    ) as { roles?: string[] };
+    expect(payload.roles).toEqual(['App.Access']);
+  });
+});

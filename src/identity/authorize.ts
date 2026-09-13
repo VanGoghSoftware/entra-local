@@ -5,6 +5,10 @@ import { tenantGuard } from '../http/tenant.js';
 import type { Store } from '../store/store.js';
 import type { AppRegistration, User } from '../store/types.js';
 import type { TokenService } from '../tokens/service.js';
+import {
+  assignmentRequiredDescription,
+  isAssignmentRequiredAndMissing,
+} from './assignmentRequired.js';
 import { createAuthStateSigner, type AuthorizeState, type AuthStateSigner } from './authState.js';
 import { buildIssuer } from './metadata.js';
 import { resolveResource, scopesAreValid, splitScopes } from './scopes.js';
@@ -380,6 +384,28 @@ function redirectError(
   void reply.header('cache-control', 'no-store').redirect(url, 302);
 }
 
+/**
+ * Refuse the sign-in with `access_denied` (AADSTS50105) when the client app requires an assignment
+ * the user lacks. Returns true when a response was sent.
+ */
+function refuseIfUnassigned(
+  reply: FastifyReply,
+  ctx: AuthorizeContext,
+  v: ValidatedAuthorize,
+  user: User,
+): boolean {
+  if (!isAssignmentRequiredAndMissing(v.app, user, ctx.store)) return false;
+  redirectError(reply, {
+    kind: 'redirectError',
+    redirectUri: v.redirectUri,
+    responseMode: v.responseMode,
+    error: 'access_denied',
+    description: assignmentRequiredDescription(v.app),
+    ...(v.state !== undefined ? { state: v.state } : {}),
+  });
+  return true;
+}
+
 /** Resolve a valid (non-expired, enabled-user) session from the request cookie, if any. */
 function resolveSession(request: FastifyRequest, store: Store): User | undefined {
   const sid = request.cookies[SESSION_COOKIE];
@@ -474,6 +500,7 @@ function handleInitialAuthorize(
 
   if (prompt === 'none') {
     if (sessionUser) {
+      if (refuseIfUnassigned(reply, ctx, v, sessionUser)) return;
       issueCodeAndRedirect(reply, ctx, v, sessionUser);
     } else {
       redirectError(reply, {
@@ -490,6 +517,7 @@ function handleInitialAuthorize(
 
   const forceInteractive = prompt === 'select_account' || prompt === 'login';
   if (sessionUser && !forceInteractive) {
+    if (refuseIfUnassigned(reply, ctx, v, sessionUser)) return;
     issueCodeAndRedirect(reply, ctx, v, sessionUser);
     return;
   }
@@ -595,6 +623,7 @@ function handleSignInSubmit(
   // Set after the session cookie so the session cookie stays the primary `Set-Cookie`.
   rememberRecentUpn(request, reply, user.userPrincipalName);
 
+  if (refuseIfUnassigned(reply, ctx, v, user)) return;
   issueCodeAndRedirect(reply, ctx, v, user);
 }
 

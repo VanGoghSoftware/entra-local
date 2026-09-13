@@ -5,6 +5,11 @@ import { tenantGuard } from '../http/tenant.js';
 import type { Store } from '../store/store.js';
 import { scopeNames } from '../tokens/claims.js';
 import type { TokenService } from '../tokens/service.js';
+import {
+  ASSIGNMENT_REQUIRED_ERROR_CODE,
+  assignmentRequiredDescription,
+  isAssignmentRequiredAndMissing,
+} from './assignmentRequired.js';
 import { authenticateClient, field, type Body } from './clientAuth.js';
 import { autoGrantedRoles, resolveClientCredentialScope } from './clientCredentials.js';
 import { DEVICE_CODE_GRANT, handleDeviceCodeGrant } from './deviceCode.js';
@@ -90,6 +95,16 @@ async function handleAuthorizationCode(
     sendOAuthError(reply, {
       error: 'invalid_grant',
       description: 'The user associated with this code no longer exists.',
+      correlationId: cid,
+    });
+    return;
+  }
+
+  if (isAssignmentRequiredAndMissing(app, user, ctx.store)) {
+    sendOAuthError(reply, {
+      error: 'invalid_grant',
+      description: assignmentRequiredDescription(app),
+      errorCodes: [ASSIGNMENT_REQUIRED_ERROR_CODE],
       correlationId: cid,
     });
     return;
@@ -202,6 +217,16 @@ async function handleRefreshToken(
     sendOAuthError(reply, {
       error: 'invalid_grant',
       description: 'The user associated with this refresh token no longer exists.',
+      correlationId: cid,
+    });
+    return;
+  }
+
+  if (isAssignmentRequiredAndMissing(app, user, ctx.store)) {
+    sendOAuthError(reply, {
+      error: 'invalid_grant',
+      description: assignmentRequiredDescription(app),
+      errorCodes: [ASSIGNMENT_REQUIRED_ERROR_CODE],
       correlationId: cid,
     });
     return;
