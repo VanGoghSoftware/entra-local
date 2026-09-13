@@ -68,6 +68,7 @@ function mapApp(row: Row): AppRegistration {
     optionalClaims: parseOptionalClaims(optStr(row, 'optional_claims')),
     groupMembershipClaims: normalizeGroupClaims(optStr(row, 'group_membership_claims')),
     groupOverageLimit: optNum(row, 'group_overage_limit'),
+    appRoleAssignmentRequired: asBool(row, 'app_role_assignment_required'),
     createdAt: reqNum(row, 'created_at'),
   };
 }
@@ -159,8 +160,9 @@ export function createAppsRepository(db: Database, clock: Clock): AppsRepository
   const insertApp = db.prepare(
     `INSERT INTO app_registrations
        (app_id, tenant_id, display_name, is_confidential, app_id_uri,
-        optional_claims, group_membership_claims, group_overage_limit, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        optional_claims, group_membership_claims, group_overage_limit,
+        app_role_assignment_required, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const deleteApp = db.prepare('DELETE FROM app_registrations WHERE app_id = ?');
 
@@ -254,6 +256,7 @@ export function createAppsRepository(db: Database, clock: Clock): AppsRepository
         serializeOptionalClaims(input.optionalClaims),
         input.groupMembershipClaims ?? 'None',
         input.groupOverageLimit ?? null,
+        fromBool(input.appRoleAssignmentRequired ?? false),
         clock(),
       );
       return repo.getByAppId(appId) as AppRegistration;
@@ -286,6 +289,10 @@ export function createAppsRepository(db: Database, clock: Clock): AppsRepository
       if (patch.groupOverageLimit !== undefined) {
         sets.push('group_overage_limit = ?');
         values.push(patch.groupOverageLimit);
+      }
+      if (patch.appRoleAssignmentRequired !== undefined) {
+        sets.push('app_role_assignment_required = ?');
+        values.push(fromBool(patch.appRoleAssignmentRequired));
       }
       if (sets.length > 0) {
         db.prepare(`UPDATE app_registrations SET ${sets.join(', ')} WHERE app_id = ?`).run(

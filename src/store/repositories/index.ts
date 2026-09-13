@@ -1,5 +1,9 @@
 import type { Database } from '../db.js';
 import type { Clock } from '../util.js';
+import {
+  createAppRoleAssignmentsRepository,
+  type AppRoleAssignmentsRepository,
+} from './appRoleAssignments.js';
 import { createAppsRepository, type AppsRepository } from './apps.js';
 import { createAuthCodesRepository, type AuthCodesRepository } from './authCodes.js';
 import { createDeviceCodesRepository, type DeviceCodesRepository } from './deviceCodes.js';
@@ -16,6 +20,7 @@ export interface Repositories {
   users: UsersRepository;
   groups: GroupsRepository;
   apps: AppsRepository;
+  appRoleAssignments: AppRoleAssignmentsRepository;
   signingKeys: SigningKeysRepository;
   authCodes: AuthCodesRepository;
   refreshTokens: RefreshTokensRepository;
@@ -30,6 +35,7 @@ export function createRepositories(db: Database, clock: Clock): Repositories {
     users: createUsersRepository(db, clock),
     groups: createGroupsRepository(db, clock),
     apps: createAppsRepository(db, clock),
+    appRoleAssignments: createAppRoleAssignmentsRepository(db, clock),
     signingKeys: createSigningKeysRepository(db, clock),
     authCodes: createAuthCodesRepository(db, clock),
     refreshTokens: createRefreshTokensRepository(db, clock),
@@ -39,6 +45,7 @@ export function createRepositories(db: Database, clock: Clock): Repositories {
 }
 
 export type {
+  AppRoleAssignmentsRepository,
   AppsRepository,
   AuthCodesRepository,
   DeviceCodesRepository,

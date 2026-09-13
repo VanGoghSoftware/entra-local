@@ -330,3 +330,113 @@ describe('sessions repository (criterion 4)', () => {
     expect(sessions.get(s.id)).toBeUndefined();
   });
 });
+
+describe('app role assignments repository', () => {
+  it('assigns roles to users and groups, resolves inherited roles, and cascades on delete', () => {
+    const { apps, groups, users, appRoleAssignments } = ctx.store;
+    const alice = users.getByUpn('alice@entralocal.dev')!;
+    const bob = users.getByUpn('bob@entralocal.dev')!;
+    const app = apps.create({
+      tenantId: TEST_TENANT_ID,
+      displayName: 'Roles App',
+      isConfidential: true,
+    });
+    const reader = apps.addRole(app.appId, { value: 'Tasks.Read', allowedMemberTypes: 'User' });
+    const approver = apps.addRole(app.appId, {
+      value: 'Tasks.Approve',
+      allowedMemberTypes: 'User, Application',
+    });
+    const daemonOnly = apps.addRole(app.appId, {
+      value: 'Tasks.Sync',
+      allowedMemberTypes: 'Application',
+    });
+    const team = groups.create({ tenantId: TEST_TENANT_ID, displayName: 'Team' });
+    groups.addMember(team.id, alice.id);
+    groups.addMember(team.id, bob.id);
+
+    const direct = appRoleAssignments.create({
+      appId: app.appId,
+      roleId: approver.id,
+      principalType: 'User',
+      principalId: alice.id,
+    });
+    const viaGroup = appRoleAssignments.create({
+      appId: app.appId,
+      roleId: reader.id,
+      principalType: 'Group',
+      principalId: team.id,
+    });
+    appRoleAssignments.create({
+      appId: app.appId,
+      roleId: daemonOnly.id,
+      principalType: 'User',
+      principalId: alice.id,
+    });
+
+    expect(direct.principalType).toBe('User');
+    expect(direct.principalId).toBe(alice.id);
+    expect(direct.createdAt).toBe(FIXED_NOW);
+    expect(viaGroup.principalType).toBe('Group');
+    expect(viaGroup.principalId).toBe(team.id);
+    expect(appRoleAssignments.getById(direct.id)?.roleId).toBe(approver.id);
+
+    // Direct + inherited, only enabled `User`-type roles, distinct, ordered by value.
+    expect(appRoleAssignments.rolesForUser(app.appId, alice.id)).toEqual([
+      'Tasks.Approve',
+      'Tasks.Read',
+    ]);
+    expect(appRoleAssignments.rolesForUser(app.appId, bob.id)).toEqual(['Tasks.Read']);
+
+    // Listing per principal is direct-only; per app and per group list everything relevant.
+    expect(appRoleAssignments.listForUser(alice.id)).toHaveLength(2);
+    expect(appRoleAssignments.listForUser(bob.id)).toHaveLength(0);
+    expect(appRoleAssignments.listForGroup(team.id)).toHaveLength(1);
+    expect(appRoleAssignments.listForApp(app.appId)).toHaveLength(3);
+
+    // A disabled role leaves the claim but still counts as an assignment.
+    apps.updateRole(app.appId, reader.id, { isEnabled: false });
+    expect(appRoleAssignments.rolesForUser(app.appId, bob.id)).toEqual([]);
+    expect(appRoleAssignments.hasAssignment(app.appId, bob.id)).toBe(true);
+
+    const carol = users.create({
+      tenantId: TEST_TENANT_ID,
+      userPrincipalName: 'carol@entralocal.dev',
+      displayName: 'Carol',
+    });
+    expect(appRoleAssignments.hasAssignment(app.appId, carol.id)).toBe(false);
+    expect(appRoleAssignments.rolesForUser(app.appId, carol.id)).toEqual([]);
+
+    // Duplicates are refused by the unique constraints.
+    expect(() =>
+      appRoleAssignments.create({
+        appId: app.appId,
+        roleId: approver.id,
+        principalType: 'User',
+        principalId: alice.id,
+      }),
+    ).toThrow();
+
+    // Remove is scoped to the app; cascades follow the role, the group and the app.
+    expect(appRoleAssignments.remove('some-other-app', direct.id)).toBe(false);
+    expect(appRoleAssignments.remove(app.appId, direct.id)).toBe(true);
+    expect(appRoleAssignments.remove(app.appId, direct.id)).toBe(false);
+    groups.delete(team.id);
+    expect(appRoleAssignments.getById(viaGroup.id)).toBeUndefined();
+    apps.removeRole(app.appId, daemonOnly.id);
+    expect(appRoleAssignments.listForApp(app.appId)).toHaveLength(0);
+  });
+
+  it('round-trips appRoleAssignmentRequired on the app registration (default false)', () => {
+    const { apps } = ctx.store;
+    const created = apps.create({ tenantId: TEST_TENANT_ID, displayName: 'Gated App' });
+    expect(created.appRoleAssignmentRequired).toBe(false);
+    const updated = apps.update(created.appId, { appRoleAssignmentRequired: true });
+    expect(updated?.appRoleAssignmentRequired).toBe(true);
+    const explicit = apps.create({
+      tenantId: TEST_TENANT_ID,
+      displayName: 'Gated From Birth',
+      appRoleAssignmentRequired: true,
+    });
+    expect(apps.getByAppId(explicit.appId)?.appRoleAssignmentRequired).toBe(true);
+  });
+});

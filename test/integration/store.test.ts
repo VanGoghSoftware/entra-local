@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '../../src/store/db.js';
-import { runMigrations } from '../../src/store/migrations/index.js';
+import { MIGRATIONS, runMigrations } from '../../src/store/migrations/index.js';
 import { createStore } from '../../src/store/store.js';
 import { buildTestApp } from '../helpers/buildTestApp.js';
 import { TEST_TENANT_ID, TMP_DIR } from '../helpers/constants.js';
@@ -19,6 +19,7 @@ const EXPECTED_TABLES = [
   'app_secrets',
   'app_scopes',
   'app_roles',
+  'app_role_assignments',
   'signing_keys',
   'authorization_codes',
   'refresh_tokens',
@@ -50,7 +51,7 @@ describe('store plugin: migrations (criterion 1)', () => {
           version: number;
         }[]
       ).map((r) => r.version);
-      expect(versions).toEqual([1, 2]);
+      expect(versions).toEqual([1, 2, 3]);
     } finally {
       await ctx.close();
     }
@@ -61,13 +62,50 @@ describe('store plugin: migrations (criterion 1)', () => {
     const dbPath = join(TMP_DIR, `${randomUUID()}.db`);
     try {
       const db1 = openDatabase(dbPath);
-      expect(runMigrations(db1, () => 1)).toEqual([1, 2]);
+      expect(runMigrations(db1, () => 1)).toEqual([1, 2, 3]);
       db1.close();
 
       const db2 = openDatabase(dbPath);
       expect(runMigrations(db2, () => 1)).toEqual([]); // already applied
       expect(tableNames(db2)).toContain('device_codes');
       db2.close();
+    } finally {
+      rmSync(dbPath, { force: true });
+      rmSync(`${dbPath}-wal`, { force: true });
+      rmSync(`${dbPath}-shm`, { force: true });
+    }
+  });
+
+  it('migration 003 applies on top of a version-2 database and defaults the new column', () => {
+    mkdirSync(TMP_DIR, { recursive: true });
+    const dbPath = join(TMP_DIR, `${randomUUID()}.db`);
+    try {
+      const db = openDatabase(dbPath);
+      // A database as an existing installation left it: versions 1 and 2 applied, one app.
+      db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+        version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);`);
+      for (const migration of MIGRATIONS.filter((m) => m.version <= 2)) {
+        db.exec(migration.sql);
+        db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(
+          migration.version,
+          1,
+        );
+      }
+      db.prepare(
+        `INSERT INTO tenants (id, display_name, issuer, created_at) VALUES (?, 'T', 'iss', 1)`,
+      ).run(TEST_TENANT_ID);
+      db.prepare(
+        `INSERT INTO app_registrations (app_id, tenant_id, display_name, is_confidential, created_at)
+         VALUES ('legacy-app', ?, 'Legacy', 0, 1)`,
+      ).run(TEST_TENANT_ID);
+
+      expect(runMigrations(db, () => 2)).toEqual([3]);
+      expect(tableNames(db)).toContain('app_role_assignments');
+      const row = db
+        .prepare('SELECT app_role_assignment_required AS r FROM app_registrations WHERE app_id = ?')
+        .get('legacy-app') as { r: number };
+      expect(row.r).toBe(0);
+      db.close();
     } finally {
       rmSync(dbPath, { force: true });
       rmSync(`${dbPath}-wal`, { force: true });

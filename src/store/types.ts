@@ -81,6 +81,8 @@ export interface AppRegistration {
   groupMembershipClaims: GroupMembershipClaims;
   /** Per-app override of the global group overage limit; `null` uses the configured default. */
   groupOverageLimit: number | null;
+  /** Entra's "User assignment required?": refuse sign-in for users without an app role assignment. */
+  appRoleAssignmentRequired: boolean;
   createdAt: number;
 }
 
@@ -131,6 +133,7 @@ export interface NewApp {
   optionalClaims?: OptionalClaimsConfig;
   groupMembershipClaims?: GroupMembershipClaims;
   groupOverageLimit?: number | null;
+  appRoleAssignmentRequired?: boolean;
 }
 
 export interface AppUpdate {
@@ -140,6 +143,7 @@ export interface AppUpdate {
   optionalClaims?: OptionalClaimsConfig;
   groupMembershipClaims?: GroupMembershipClaims;
   groupOverageLimit?: number | null;
+  appRoleAssignmentRequired?: boolean;
 }
 
 export interface ScopeUpdate {
@@ -213,6 +217,27 @@ export interface NewRole {
   displayName?: string | null;
   allowedMemberTypes?: string;
   isEnabled?: boolean;
+}
+
+/** Who an app role is assigned to. */
+export type AppRolePrincipalType = 'User' | 'Group';
+
+/** An app role held by a user or a group. `appId` is the app that defines the role (the resource). */
+export interface AppRoleAssignment {
+  id: string;
+  appId: string;
+  roleId: string;
+  principalType: AppRolePrincipalType;
+  principalId: string;
+  createdAt: number;
+}
+
+export interface NewAppRoleAssignment {
+  id?: string;
+  appId: string;
+  roleId: string;
+  principalType: AppRolePrincipalType;
+  principalId: string;
 }
 
 export interface SigningKey {
