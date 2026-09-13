@@ -388,7 +388,9 @@ describe('app role assignments repository', () => {
     expect(appRoleAssignments.rolesForUser(app.appId, bob.id)).toEqual(['Tasks.Read']);
 
     // Listing per principal is direct-only; per app and per group list everything relevant.
-    expect(appRoleAssignments.listForUser(alice.id)).toHaveLength(2);
+    // Alice has 3 direct assignments: seed adds Tasks.Approve on local-web-client, test adds
+    // approver and daemonOnly on the Roles App.
+    expect(appRoleAssignments.listForUser(alice.id)).toHaveLength(3);
     expect(appRoleAssignments.listForUser(bob.id)).toHaveLength(0);
     expect(appRoleAssignments.listForGroup(team.id)).toHaveLength(1);
     expect(appRoleAssignments.listForApp(app.appId)).toHaveLength(3);

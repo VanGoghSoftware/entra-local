@@ -142,7 +142,8 @@ describe('store plugin: seed determinism (criterion 3)', () => {
       expect(count(db, 'app_redirect_uris')).toBe(3);
       expect(count(db, 'app_scopes')).toBe(4);
       expect(count(db, 'app_secrets')).toBe(1);
-      expect(count(db, 'app_roles')).toBe(1);
+      expect(count(db, 'app_roles')).toBe(3);
+      expect(count(db, 'app_role_assignments')).toBe(2);
       expect(count(db, 'signing_keys')).toBe(1); // #3 bootstrap seeds/generates the active key
 
       expect(ctx.app.store.tenants.getDefault()?.id).toBe(TEST_TENANT_ID);
@@ -178,6 +179,26 @@ describe('store plugin: seed determinism (criterion 3)', () => {
         'access_as_admin',
         'access_as_user',
       ]);
+
+      // App role assignments sample: two User-type roles on local-web-client; Alice holds
+      // Tasks.Approve directly, the Developers group holds Tasks.Read.
+      const webClient = ctx.app.store.apps.getByAppId('cccccccc-0000-0000-0000-000000000006');
+      expect(ctx.app.store.apps.listRoles(webClient!.appId).map((r) => r.value)).toEqual([
+        'Tasks.Approve',
+        'Tasks.Read',
+      ]);
+      expect(
+        ctx.app.store.appRoleAssignments.rolesForUser(
+          webClient!.appId,
+          'aaaaaaaa-0000-0000-0000-000000000001',
+        ),
+      ).toEqual(['Tasks.Approve', 'Tasks.Read']);
+      expect(
+        ctx.app.store.appRoleAssignments.rolesForUser(
+          webClient!.appId,
+          'aaaaaaaa-0000-0000-0000-000000000002',
+        ),
+      ).toEqual(['Tasks.Read']);
     } finally {
       await ctx.close();
     }
@@ -239,6 +260,7 @@ describe('store plugin: reset (criterion 8)', () => {
       expect(store.users.count()).toBe(2);
       expect(store.users.getByUpn('stray@entralocal.dev')).toBeUndefined();
       expect(store.signingKeys.getActive(TEST_TENANT_ID)?.kid).toBe('boot-kid');
+      expect(count(ctx.app.store.db, 'app_role_assignments')).toBe(2);
     } finally {
       await ctx.close();
     }

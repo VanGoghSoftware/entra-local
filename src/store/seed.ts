@@ -56,6 +56,18 @@ export const SEED = {
   groupDevelopersId: 'bbbbbbbb-0000-0000-0000-000000000002',
   groupDataTeamId: 'bbbbbbbb-0000-0000-0000-000000000003',
   groupLocalAdminsId: 'bbbbbbbb-0000-0000-0000-000000000004',
+  /**
+   * App role assignments sample: two `User`-type roles on `local-web-client`. Alice holds
+   * `Tasks.Approve` directly; the `Developers` group (Alice and Bob) holds `Tasks.Read`, so Alice's
+   * ID token carries both roles and Bob's carries `Tasks.Read` only. Fixed ids so tests and docs
+   * can reference them verbatim.
+   */
+  webClientReadRoleId: 'eeeeeeee-0000-0000-0000-000000000002',
+  webClientApproveRoleId: 'eeeeeeee-0000-0000-0000-000000000003',
+  webClientReadRoleValue: 'Tasks.Read',
+  webClientApproveRoleValue: 'Tasks.Approve',
+  assignmentAliceApproveId: 'abababab-0000-0000-0000-000000000001',
+  assignmentDevelopersReadId: 'abababab-0000-0000-0000-000000000002',
   /** Known dev-only credentials. */
   userPassword: 'Password1!',
   daemonSecret: 'daemon-app-secret',
@@ -315,6 +327,47 @@ export function seed(db: Database, clock: Clock, options: SeedOptions): SeedResu
       SEED.appWebClientId,
       SEED.webClientRedirectUri,
       'spa',
+    );
+
+    // App role assignments sample (see SEED): two User-type roles on local-web-client, one held by
+    // Alice directly and one by the Developers group. Bob's tokens show the inherited role only.
+    for (const role of [
+      { id: SEED.webClientReadRoleId, value: SEED.webClientReadRoleValue, name: 'Read tasks' },
+      {
+        id: SEED.webClientApproveRoleId,
+        value: SEED.webClientApproveRoleValue,
+        name: 'Approve tasks',
+      },
+    ]) {
+      run(
+        `INSERT OR IGNORE INTO app_roles
+           (id, app_id, value, display_name, allowed_member_types, is_enabled)
+         VALUES (?, ?, ?, ?, 'User', 1)`,
+        role.id,
+        SEED.appWebClientId,
+        role.value,
+        role.name,
+      );
+    }
+    run(
+      `INSERT OR IGNORE INTO app_role_assignments
+         (id, app_id, role_id, user_id, group_id, created_at)
+       VALUES (?, ?, ?, ?, NULL, ?)`,
+      SEED.assignmentAliceApproveId,
+      SEED.appWebClientId,
+      SEED.webClientApproveRoleId,
+      SEED.userAliceId,
+      now,
+    );
+    run(
+      `INSERT OR IGNORE INTO app_role_assignments
+         (id, app_id, role_id, user_id, group_id, created_at)
+       VALUES (?, ?, ?, NULL, ?, ?)`,
+      SEED.assignmentDevelopersReadId,
+      SEED.appWebClientId,
+      SEED.webClientReadRoleId,
+      SEED.groupDevelopersId,
+      now,
     );
 
     // local-api: resource/API app whose *access token* receives optional claims + group claims. The
