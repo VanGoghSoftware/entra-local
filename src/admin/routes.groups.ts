@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { NewGroup } from '../store/types.js';
 import { toGroupDto, toPaged, toUserDto } from './dto.js';
 import { invalidReference, notFound } from './errors.js';
+import { describeAssignment } from './roleAssignments.js';
 import {
   groupCreateSchema,
   groupPatchSchema,
@@ -101,4 +102,12 @@ export function registerGroupRoutes(app: FastifyInstance): void {
       return null;
     },
   );
+
+  app.get('/api/groups/:id/appRoleAssignments', (request: FastifyRequest<{ Params: IdParams }>) => {
+    const id = request.params.id;
+    if (!store.groups.getById(id)) throw notFound(`No group with id '${id}'.`);
+    return store.appRoleAssignments
+      .listForGroup(id)
+      .map((assignment) => describeAssignment(store, assignment));
+  });
 }

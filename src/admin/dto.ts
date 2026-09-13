@@ -1,6 +1,8 @@
 import type {
   AppRegistration,
   AppRole,
+  AppRoleAssignment,
+  AppRolePrincipalType,
   AppScope,
   AppSecret,
   CreatedSecret,
@@ -112,6 +114,35 @@ export function toRoleDto(role: AppRole): RoleDto {
   };
 }
 
+export interface AppRoleAssignmentDto {
+  id: string;
+  /** The app that defines the role (the resource). */
+  appId: string;
+  roleId: string;
+  roleValue: string;
+  principalType: AppRolePrincipalType;
+  principalId: string;
+  principalDisplayName: string;
+  createdAt: string;
+}
+
+export function toAppRoleAssignmentDto(
+  assignment: AppRoleAssignment,
+  roleValue: string,
+  principalDisplayName: string,
+): AppRoleAssignmentDto {
+  return {
+    id: assignment.id,
+    appId: assignment.appId,
+    roleId: assignment.roleId,
+    roleValue,
+    principalType: assignment.principalType,
+    principalId: assignment.principalId,
+    principalDisplayName,
+    createdAt: isoFromEpoch(assignment.createdAt) as string,
+  };
+}
+
 export interface SecretDto {
   id: string;
   displayName: string | null;
@@ -151,6 +182,7 @@ export interface AppDto {
   optionalClaims: OptionalClaimsConfig;
   groupMembershipClaims: GroupMembershipClaims;
   groupOverageLimit: number | null;
+  appRoleAssignmentRequired: boolean;
   createdAt: string;
 }
 
@@ -174,6 +206,7 @@ export function toAppDto(app: AppRegistration, sub: AppSubCollections): AppDto {
     optionalClaims: app.optionalClaims,
     groupMembershipClaims: app.groupMembershipClaims,
     groupOverageLimit: app.groupOverageLimit,
+    appRoleAssignmentRequired: app.appRoleAssignmentRequired,
     createdAt: isoFromEpoch(app.createdAt) as string,
   };
 }

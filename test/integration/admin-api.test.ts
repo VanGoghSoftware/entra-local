@@ -511,3 +511,198 @@ describe('Admin API — token configuration', () => {
     });
   });
 });
+
+describe('Admin API — app role assignments', () => {
+  it('lists, creates and deletes assignments; the app DTO and users/groups expose them', async () => {
+    ctx = await buildTestApp();
+    const web = SEED.appWebClientId;
+
+    // Seeded: Alice → Tasks.Approve (direct), Developers → Tasks.Read.
+    const seeded = await ctx.inject({
+      method: 'GET',
+      url: `/admin/api/apps/${web}/roleAssignments`,
+    });
+    expect(seeded.statusCode).toBe(200);
+    const list = seeded.json() as {
+      id: string;
+      roleValue: string;
+      principalType: string;
+      principalId: string;
+      principalDisplayName: string;
+      createdAt: string;
+    }[];
+    expect(list).toHaveLength(2);
+    expect(list.map((a) => a.roleValue).sort()).toEqual(['Tasks.Approve', 'Tasks.Read']);
+    const developers = list.find((a) => a.principalType === 'Group')!;
+    expect(developers.principalId).toBe(SEED.groupDevelopersId);
+    expect(developers.principalDisplayName).toBe('Developers');
+    expect(developers.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    // Create: Bob → Tasks.Approve.
+    const create = await ctx.inject({
+      method: 'POST',
+      url: `/admin/api/apps/${web}/roleAssignments`,
+      headers: JSON_HEADERS,
+      payload: {
+        roleId: SEED.webClientApproveRoleId,
+        principalType: 'User',
+        principalId: SEED.userBobId,
+      },
+    });
+    expect(create.statusCode).toBe(201);
+    const created = create.json() as {
+      id: string;
+      roleValue: string;
+      principalDisplayName: string;
+    };
+    expect(created.roleValue).toBe('Tasks.Approve');
+    expect(created.principalDisplayName).toBe('Bob Example');
+
+    // Duplicate → 409.
+    const dup = await ctx.inject({
+      method: 'POST',
+      url: `/admin/api/apps/${web}/roleAssignments`,
+      headers: JSON_HEADERS,
+      payload: {
+        roleId: SEED.webClientApproveRoleId,
+        principalType: 'User',
+        principalId: SEED.userBobId,
+      },
+    });
+    expect(dup.statusCode).toBe(409);
+
+    // Per-user (direct only) and per-group views.
+    const bobs = await ctx.inject({
+      method: 'GET',
+      url: `/admin/api/users/${SEED.userBobId}/appRoleAssignments`,
+    });
+    expect((bobs.json() as unknown[]).map((a) => (a as { roleValue: string }).roleValue)).toEqual([
+      'Tasks.Approve',
+    ]);
+    const devs = await ctx.inject({
+      method: 'GET',
+      url: `/admin/api/groups/${SEED.groupDevelopersId}/appRoleAssignments`,
+    });
+    expect(devs.json()).toHaveLength(1);
+
+    // Delete, then 404 on a repeat.
+    const del = await ctx.inject({
+      method: 'DELETE',
+      url: `/admin/api/apps/${web}/roleAssignments/${created.id}`,
+    });
+    expect(del.statusCode).toBe(204);
+    const again = await ctx.inject({
+      method: 'DELETE',
+      url: `/admin/api/apps/${web}/roleAssignments/${created.id}`,
+    });
+    expect(again.statusCode).toBe(404);
+  });
+
+  it('rejects unknown apps, roles of another app, non-User roles, unknown principals', async () => {
+    ctx = await buildTestApp();
+    const web = SEED.appWebClientId;
+
+    const noApp = await ctx.inject({
+      method: 'GET',
+      url: '/admin/api/apps/cccccccc-0000-0000-0000-00000000dead/roleAssignments',
+    });
+    expect(noApp.statusCode).toBe(404);
+
+    const foreignRole = await ctx.inject({
+      method: 'POST',
+      url: `/admin/api/apps/${web}/roleAssignments`,
+      headers: JSON_HEADERS,
+      payload: { roleId: SEED.daemonRoleId, principalType: 'User', principalId: SEED.userAliceId },
+    });
+    expect(foreignRole.statusCode).toBe(400);
+    expect((foreignRole.json() as ErrorBody).error.code).toBe('invalid_reference');
+
+    const appOnlyRole = ctx.app.store.apps.addRole(web, {
+      value: 'Daemon.Only',
+      allowedMemberTypes: 'Application',
+    });
+    const notUser = await ctx.inject({
+      method: 'POST',
+      url: `/admin/api/apps/${web}/roleAssignments`,
+      headers: JSON_HEADERS,
+      payload: { roleId: appOnlyRole.id, principalType: 'User', principalId: SEED.userAliceId },
+    });
+    expect(notUser.statusCode).toBe(400);
+    expect((notUser.json() as ErrorBody).error.code).toBe('validation_error');
+    expect((notUser.json() as ErrorBody).error.target).toBe('roleId');
+
+    const noUser = await ctx.inject({
+      method: 'POST',
+      url: `/admin/api/apps/${web}/roleAssignments`,
+      headers: JSON_HEADERS,
+      payload: {
+        roleId: SEED.webClientReadRoleId,
+        principalType: 'User',
+        principalId: 'aaaaaaaa-0000-0000-0000-00000000dead',
+      },
+    });
+    expect(noUser.statusCode).toBe(400);
+    expect((noUser.json() as ErrorBody).error.code).toBe('invalid_reference');
+
+    const badType = await ctx.inject({
+      method: 'POST',
+      url: `/admin/api/apps/${web}/roleAssignments`,
+      headers: JSON_HEADERS,
+      payload: { roleId: SEED.webClientReadRoleId, principalType: 'Robot', principalId: 'x' },
+    });
+    expect(badType.statusCode).toBe(400);
+    expect((badType.json() as ErrorBody).error.code).toBe('validation_error');
+
+    const noPrincipalUser = await ctx.inject({
+      method: 'GET',
+      url: '/admin/api/users/aaaaaaaa-0000-0000-0000-00000000dead/appRoleAssignments',
+    });
+    expect(noPrincipalUser.statusCode).toBe(404);
+  });
+
+  it('exposes appRoleAssignmentRequired on create, patch and the app DTO', async () => {
+    ctx = await buildTestApp();
+    const created = await ctx.inject({
+      method: 'POST',
+      url: '/admin/api/apps',
+      headers: JSON_HEADERS,
+      payload: { displayName: 'Gated', isConfidential: true, appRoleAssignmentRequired: true },
+    });
+    expect(created.statusCode).toBe(201);
+    const dto = created.json() as { id: string; appRoleAssignmentRequired: boolean };
+    expect(dto.appRoleAssignmentRequired).toBe(true);
+
+    const patched = await ctx.inject({
+      method: 'PATCH',
+      url: `/admin/api/apps/${dto.id}`,
+      headers: JSON_HEADERS,
+      payload: { appRoleAssignmentRequired: false },
+    });
+    expect(
+      (patched.json() as { appRoleAssignmentRequired: boolean }).appRoleAssignmentRequired,
+    ).toBe(false);
+
+    const seededDefault = await ctx.inject({
+      method: 'GET',
+      url: `/admin/api/apps/${SEED.appWebClientId}`,
+    });
+    expect(
+      (seededDefault.json() as { appRoleAssignmentRequired: boolean }).appRoleAssignmentRequired,
+    ).toBe(false);
+  });
+
+  it('token preview shows the assigned roles', async () => {
+    ctx = await buildTestApp();
+    const preview = await ctx.inject({
+      method: 'POST',
+      url: `/admin/api/apps/${SEED.appWebClientId}/token-preview`,
+      headers: JSON_HEADERS,
+      payload: { userId: SEED.userAliceId, tokenType: 'idToken' },
+    });
+    expect(preview.statusCode).toBe(200);
+    expect((preview.json() as { claims: { roles?: string[] } }).claims.roles).toEqual([
+      'Tasks.Approve',
+      'Tasks.Read',
+    ]);
+  });
+});

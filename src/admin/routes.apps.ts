@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppRegistration, NewApp } from '../store/types.js';
 import type { AccessTokenClaims, IdTokenClaims } from '../tokens/claims.js';
 import {
+  parseAllowedMemberTypes,
   toAppDto,
   toPaged,
   toRedirectUriDto,
@@ -11,12 +12,14 @@ import {
   toSecretCreatedDto,
   type AppDto,
 } from './dto.js';
-import { conflict, notFound } from './errors.js';
+import { AdminError, conflict, invalidReference, notFound } from './errors.js';
+import { describeAssignment } from './roleAssignments.js';
 import {
   appCreateSchema,
   appPatchSchema,
   listQuerySchema,
   redirectUriCreateSchema,
+  roleAssignmentCreateSchema,
   roleCreateSchema,
   rolePatchSchema,
   scopeCreateSchema,
@@ -92,6 +95,7 @@ export function registerAppRoutes(app: FastifyInstance): void {
       displayName: body.displayName,
       isConfidential: body.isConfidential,
       appIdUri: body.appIdUri ?? null,
+      appRoleAssignmentRequired: body.appRoleAssignmentRequired,
     };
     const created = store.apps.create(input);
     for (const redirect of body.redirectUris ?? []) {
@@ -267,6 +271,70 @@ export function registerAppRoutes(app: FastifyInstance): void {
       const registration = requireApp(request.params.id);
       const removed = store.apps.removeRole(registration.appId, request.params.subId);
       if (!removed) throw notFound(`No role '${request.params.subId}' for this app.`);
+      void reply.code(204);
+      return null;
+    },
+  );
+
+  // --- App role assignments ---------------------------------------------------------------------
+
+  app.get('/api/apps/:id/roleAssignments', (request: FastifyRequest<{ Params: IdParams }>) => {
+    const registration = requireApp(request.params.id);
+    return store.appRoleAssignments
+      .listForApp(registration.appId)
+      .map((assignment) => describeAssignment(store, assignment));
+  });
+
+  app.post(
+    '/api/apps/:id/roleAssignments',
+    (request: FastifyRequest<{ Params: IdParams }>, reply: FastifyReply) => {
+      const registration = requireApp(request.params.id);
+      const body = roleAssignmentCreateSchema.parse(request.body);
+      const role = store.apps.listRoles(registration.appId).find((r) => r.id === body.roleId);
+      if (!role) throw invalidReference(`No role '${body.roleId}' for this app.`, 'roleId');
+      if (!parseAllowedMemberTypes(role.allowedMemberTypes).includes('User')) {
+        throw new AdminError(
+          'validation_error',
+          `Role '${role.value}' cannot be assigned to users or groups: its allowedMemberTypes do not include 'User'.`,
+          { target: 'roleId' },
+        );
+      }
+      const principalExists =
+        body.principalType === 'User'
+          ? store.users.getById(body.principalId) !== undefined
+          : store.groups.getById(body.principalId) !== undefined;
+      if (!principalExists) {
+        throw invalidReference(
+          `No ${body.principalType.toLowerCase()} with id '${body.principalId}'.`,
+          'principalId',
+        );
+      }
+      const duplicate = store.appRoleAssignments
+        .listForApp(registration.appId)
+        .some(
+          (a) =>
+            a.roleId === body.roleId &&
+            a.principalType === body.principalType &&
+            a.principalId === body.principalId,
+        );
+      if (duplicate) throw conflict('This principal already holds this role.', 'principalId');
+      const created = store.appRoleAssignments.create({
+        appId: registration.appId,
+        roleId: body.roleId,
+        principalType: body.principalType,
+        principalId: body.principalId,
+      });
+      void reply.code(201);
+      return describeAssignment(store, created);
+    },
+  );
+
+  app.delete(
+    '/api/apps/:id/roleAssignments/:subId',
+    (request: FastifyRequest<{ Params: SubParams }>, reply: FastifyReply) => {
+      const registration = requireApp(request.params.id);
+      const removed = store.appRoleAssignments.remove(registration.appId, request.params.subId);
+      if (!removed) throw notFound(`No role assignment '${request.params.subId}' for this app.`);
       void reply.code(204);
       return null;
     },

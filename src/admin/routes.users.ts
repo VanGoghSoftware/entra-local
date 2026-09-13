@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { NewUser, UserUpdate } from '../store/types.js';
 import { toGroupDto, toPaged, toUserDto } from './dto.js';
 import { conflict, notFound } from './errors.js';
+import { describeAssignment } from './roleAssignments.js';
 import { listQuerySchema, userCreateSchema, userPatchSchema } from './schemas.js';
 
 interface IdParams {
@@ -89,5 +90,13 @@ export function registerUserRoutes(app: FastifyInstance): void {
     const page = all.slice(query.skip, query.skip + query.top);
     const value = page.map((g) => toGroupDto(g, store.groups.memberCount(g.id)));
     return toPaged(value, all.length, query.top, query.skip);
+  });
+
+  app.get('/api/users/:id/appRoleAssignments', (request: FastifyRequest<{ Params: IdParams }>) => {
+    const id = request.params.id;
+    if (!store.users.getById(id)) throw notFound(`No user with id '${id}'.`);
+    return store.appRoleAssignments
+      .listForUser(id)
+      .map((assignment) => describeAssignment(store, assignment));
   });
 }
