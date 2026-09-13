@@ -95,15 +95,23 @@ export function AppRoleAssignmentList({
           ＋ Add assignment
         </Button>
       </div>
-      <div className="b-sm" style={{ padding: '0 16px 12px', display: 'grid', gap: 4 }}>
+      <div className="b-sm" style={{ padding: '12px 16px', display: 'grid', gap: 4 }}>
         <Toggle
           checked={app.appRoleAssignmentRequired}
           onChange={(next) => void toggleRequired(next)}
           label={<span>Assignment required</span>}
         />
         <span className="muted">
-          When on, users without an assignment are refused at sign-in (AADSTS50105).
+          When enabled, users without an assignment are refused at sign-in (AADSTS50105).
         </span>
+        {/* The reason a disabled control is disabled belongs beside it, not below the table. */}
+        {assignableRoles.length === 0 && (
+          <span className="muted">
+            <strong>Add assignment</strong> is disabled because this app defines no enabled app role
+            whose member types include <code>User</code>. Create one under{' '}
+            <strong>App roles</strong>.
+          </span>
+        )}
       </div>
       <table className="dt">
         <thead>
@@ -148,12 +156,6 @@ export function AppRoleAssignmentList({
           ))}
         </tbody>
       </table>
-      {assignableRoles.length === 0 && (
-        <p className="muted b-sm" style={{ padding: '0 16px 12px' }}>
-          Define an enabled app role whose member types include <code>User</code> under{' '}
-          <strong>App roles</strong> before assigning it.
-        </p>
-      )}
       {adding && (
         <div className="add-row">
           <Select

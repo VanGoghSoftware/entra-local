@@ -154,4 +154,35 @@ describe('AppDetail — Users and groups (app role assignments)', () => {
     await userEvent.click(toggle);
     expect(patched).toEqual([{ appRoleAssignmentRequired: true }]);
   });
+
+  it('disables adding when no role can be held by a user, and says why beside the button', async () => {
+    installFetch(({ method, path }) => {
+      if (method === 'GET' && path === `/admin/api/apps/${APP_ID}`) {
+        // Only an Application-type role: nothing here can be assigned to a user or a group.
+        return {
+          body: app({
+            appRoles: [
+              {
+                id: 'r-daemon',
+                value: 'Tasks.Sync',
+                displayName: null,
+                allowedMemberTypes: ['Application'],
+                isEnabled: true,
+              },
+            ],
+          }),
+        };
+      }
+      if (method === 'GET' && path === `/admin/api/apps/${APP_ID}/roleAssignments`)
+        return { body: [] };
+      return undefined;
+    });
+    renderDetail();
+
+    await userEvent.click(await screen.findByRole('tab', { name: 'Users and groups' }));
+    expect(await screen.findByRole('button', { name: '＋ Add assignment' })).toBeDisabled();
+    expect(
+      screen.getByText(/is disabled because this app defines no enabled app role/),
+    ).toBeInTheDocument();
+  });
 });
