@@ -24,7 +24,7 @@ Measured against the current image (2026-09-12): no configuration puts `roles` i
 - **Assignment required:** per-app switch; refusal in `/authorize` (interactive and `prompt=none`), in the `authorization_code` and `refresh_token` grants, and in device-code approval.
 - **Admin REST API:** list / create / delete assignments per app; read-only assignment lists per user and per group; the switch on app create/patch; assignment fields in the app DTO.
 - **Portal:** a "Users and groups" section on the app detail page.
-- **Graph (read-only):** `appRoleAssignments` on `/me`, `/users/{id}`, `/groups/{id}`; `appRoleAssignedTo` on `/servicePrincipals/{id}`. Delivered as a **separate commit** so it can be dropped if the maintainer keeps Graph app-role surfaces out of scope (roadmap "Broader Graph … app roles").
+- **Graph (read-only):** `appRoleAssignments` on `/me`, `/users/{id}`, `/groups/{id}`; `appRoleAssignedTo` on `/servicePrincipals/{id}`. Delivered as a **separate commit** so it can be dropped if the maintainer keeps Graph app-role surfaces out of scope (roadmap "Broader Graph … app roles"). The shared documentation (`README.md`, `docs/token-configuration.md`, `specs/roadmap.md`) states the Graph routes in their own `docs(graph)` commit for the same reason: dropping the `feat(graph)` commit means dropping the `docs(graph)` commit with it, leaving the shared docs Graph-free.
 - **Seed:** two `User`-type roles on the existing `local-web-client` sample, one assigned to Alice directly and one to the `Developers` group.
 - Docs: `docs/token-configuration.md`, README "what it emulates", `specs/roadmap.md` row, `memory/decisions.md` entry.
 

@@ -76,7 +76,7 @@ reaching the full v1.0 acceptance bar in [`global-spec.md` §15](global-spec.md#
 | 17 | Single-executable packaging | Self-contained binary bundling runtime, portal assets, migrations | – | 14 | ✅ |
 | 25 | Trust-cert CLI command | `trust`/`untrust`/`cert-path`/`show-cert` subcommands to trust the dev cert (print by default, `--apply` to execute); exposed by the SEA binary | – | 1, 14, 17 | ✅ |
 | 26 | Local domains (subdomains + wildcard cert + hosts CLI) | Serve the emulator under `*.entra.localhost` with `login.`/`portal.`/`graph.` subdomains on one `:8443` listener routed by `Host` header, a wildcard cert, and a cross-platform `hosts` CLI command; `localhost` stays a compat origin | ✓ | 1, 4, 10, 12, 25 | ⬜ |
-| xx | App role assignments | Assign app roles to users/groups; `roles` on ID + delegated tokens; "assignment required" (AADSTS50105); admin API, portal | ✓ | 2, 5, 6, 10, 11, 12 | ✅ |
+| xx | App role assignments | Assign app roles to users/groups; `roles` on ID + delegated tokens; "assignment required" (AADSTS50105); admin API, portal, read-only Graph | ✓ | 2, 5, 6, 10, 11, 12 | ✅ |
 
 ## Iteration 3 — Sample applications
 **Outcome:** minimal, runnable MSAL sample apps across the major platforms that authenticate
@@ -124,7 +124,7 @@ assume Iterations 1-2 are ✅ (every documented endpoint and config option exist
 |---------|-----------|
 | Multi-tenant directories | Single tenant covers MVP value; multi-tenant is a large surface-area increase (`tid` routing, isolation) |
 | On-Behalf-Of (OBO) flow | Niche multi-tier API scenario; not needed to prove core value |
-| Broader Graph (writes, app roles, directory objects) | Read surface (`/me`, `/users`, `/groups`) covers the common post-sign-in case |
+| Broader Graph (writes, directory objects) | Read surface (`/me`, `/users`, `/groups`) covers the common post-sign-in case |
 | Certificate-based client auth (`private_key_jwt`) | Client-secret auth is sufficient for MVP |
 | Signing-key rotation UI | Keys are persisted/stable; manual rotation is a polish feature |
 | Consent screen / scope-consent modeling | Local dev tool auto-consents; consent UX adds friction without MVP value |

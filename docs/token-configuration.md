@@ -240,3 +240,4 @@ The same configuration is available over the Admin REST API (`/admin/api`):
 - `GET|POST /admin/api/apps/{id}/roleAssignments`, `DELETE /admin/api/apps/{id}/roleAssignments/{assignmentId}` — body `{ "roleId", "principalType": "User" | "Group", "principalId" }`.
 - `GET /admin/api/users/{id}/appRoleAssignments` (direct only), `GET /admin/api/groups/{id}/appRoleAssignments`.
 - `appRoleAssignmentRequired` on `POST`/`PATCH /admin/api/apps/{id}`.
+- Graph (read-only): `GET /graph/v1.0/me/appRoleAssignments`, `/users/{id}/appRoleAssignments`, `/groups/{id}/appRoleAssignments`, `/servicePrincipals/{appId}/appRoleAssignedTo` — `resourceId` is the resource app's `appId` (the emulator has no service principals).
