@@ -3,6 +3,7 @@ import type {
   AdminFieldIssue,
   App,
   AppRole,
+  AppRoleAssignment,
   AppScope,
   CertificateInfo,
   CreatedSecret,
@@ -14,6 +15,7 @@ import type {
   OptionalClaimKind,
   OptionalClaimsConfig,
   Paged,
+  PrincipalType,
   RedirectUri,
   SupportedClaims,
   TokenVariant,
@@ -179,6 +181,15 @@ export const api = {
   removeRole: (id: string, roleId: string) =>
     request<void>('DELETE', `${ADMIN}/apps/${id}/roles/${roleId}`),
 
+  listRoleAssignments: (id: string) =>
+    request<AppRoleAssignment[]>('GET', `${ADMIN}/apps/${id}/roleAssignments`),
+  addRoleAssignment: (
+    id: string,
+    body: { roleId: string; principalType: PrincipalType; principalId: string },
+  ) => request<AppRoleAssignment>('POST', `${ADMIN}/apps/${id}/roleAssignments`, body),
+  removeRoleAssignment: (id: string, assignmentId: string) =>
+    request<void>('DELETE', `${ADMIN}/apps/${id}/roleAssignments/${assignmentId}`),
+
   // ---- token configuration ----
   supportedClaims: () =>
     request<SupportedClaims>('GET', `${ADMIN}/token-configuration/supported-claims`),
@@ -218,4 +229,5 @@ export interface AppBody {
   displayName: string;
   isConfidential?: boolean;
   appIdUri?: string | null;
+  appRoleAssignmentRequired?: boolean;
 }
