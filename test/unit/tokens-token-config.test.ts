@@ -331,6 +331,20 @@ describe('app role assignments — roles claim', () => {
     expect(decodeJwt(alice.access_token)).not.toHaveProperty('roles');
   });
 
+  it('Roles_AccessToken_OmittedForGraphAudience_IdTokenStillCarriesClientRoles', async () => {
+    // Alice holds roles on local-web-client (the client app), but the access token targets Graph:
+    // the client's roles must not leak onto a Graph-audience token.
+    const res = await fx.service.buildTokenResponse({
+      app: fx.webClient,
+      user: fx.alice,
+      scopes: ['openid', 'https://graph.microsoft.com/User.Read'],
+      resource: null,
+      grant: 'authorization_code',
+    });
+    expect(decodeJwt(res.access_token)).not.toHaveProperty('roles');
+    expect(decodeJwt(res.id_token as string).roles).toEqual(['Tasks.Approve', 'Tasks.Read']);
+  });
+
   it('Roles_DisabledRole_IsNotEmitted', async () => {
     fx.ts.store.apps.updateRole(SEED.appWebClientId, SEED.webClientReadRoleId, {
       isEnabled: false,

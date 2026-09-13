@@ -1253,6 +1253,34 @@ describe('assignment required (app role assignments)', () => {
     expect(url.searchParams.get('state')).toBe('silent');
   });
 
+  it('SSO with a session and no prompt but no assignment redirects back with access_denied', async () => {
+    ctx = await buildTestApp();
+    const { cookie } = await signInAndGetCode(ctx, { codeChallenge: s256('v1') });
+    requireAssignment(ctx);
+    const res = await ctx.inject({
+      method: 'GET',
+      url: authorizeUrl({
+        client_id: SPA,
+        response_type: 'code',
+        redirect_uri: REDIRECT,
+        scope: `openid ${SPA_SCOPE}`,
+        state: 'sso-no-prompt',
+        code_challenge: s256('v2'),
+        code_challenge_method: 'S256',
+      }),
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(302);
+    const url = new URL(res.headers.location as string);
+    const expectedRedirect = new URL(REDIRECT);
+    expect(url.origin).toBe(expectedRedirect.origin);
+    expect(url.pathname).toBe(expectedRedirect.pathname);
+    expect(url.searchParams.get('error')).toBe('access_denied');
+    expect(url.searchParams.get('error_description')).toContain('AADSTS50105');
+    expect(url.searchParams.get('state')).toBe('sso-no-prompt');
+    expect(url.searchParams.get('code')).toBeNull();
+  });
+
   it('an assigned user signs in normally; removing the assignment before redemption fails the code with 50105', async () => {
     ctx = await buildTestApp();
     requireAssignment(ctx);
