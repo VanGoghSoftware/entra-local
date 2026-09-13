@@ -9,7 +9,8 @@ This document covers what is supported, how ID-token vs access-token configurati
 group overage payload, the seeded demo apps, and the exact portal steps.
 
 > Scope: this feature implements **optional claims** and **group claims** only. Claims-mapping
-> policies, custom claims providers, SAML tokens, and app roles are out of scope.
+> policies, custom claims providers, and SAML tokens are out of scope. `roles` on user tokens is a
+> separate mechanism, covered below under **App roles on user tokens — assignments**.
 
 ---
 
@@ -131,21 +132,43 @@ GET /graph/v1.0/groups/{id}/members
 
 ---
 
+## App roles on user tokens — assignments
+
+`roles` on a **user** token is not an optional claim: it is derived from **app role assignments**.
+Assign an enabled app role whose `allowedMemberTypes` include `User` to a user or to a group (members
+inherit), and the value lands in:
+
+- the **ID token** — roles of the **client** app the user signs in to;
+- the **delegated access token** — roles of the **resource/API** app resolved from the audience.
+
+A user with no assignment gets **no `roles` claim** (Entra emits none, never `[]`, on a user token).
+Listing `roles` under `optionalClaims` does nothing and is logged as unsupported with a pointer here.
+App-only (client-credentials) tokens are unchanged: every enabled `Application`-type role of the
+resource is auto-granted.
+
+**Assignment required.** Turn on `appRoleAssignmentRequired` on the client app (portal: *Users and
+groups* → *Assignment required*) and a user without an assignment is refused at sign-in with
+Entra's `AADSTS50105` shape: `/authorize` redirects with `error=access_denied` (also for
+`prompt=none`), the `authorization_code` and `refresh_token` grants answer `400 invalid_grant` with
+`error_codes: [50105]`, and device-code approval denies the code. Default off.
+
+---
+
 ## Seeded demo apps and users
 
 Seeded into the emulator (see [`src/store/seed.ts`](../src/store/seed.ts)) with fixed GUIDs:
 
 | App              | `appId`                                 | Token config |
 | ---------------- | --------------------------------------- | ------------ |
-| `local-web-client` | `cccccccc-0000-0000-0000-000000000006`  | **ID token** optional claims: `email`, `upn`, `given_name`, `family_name`, `groups`; group claims `SecurityGroup`; overage limit `3`. Redirect URI `http://localhost:3000`. |
+| `local-web-client` | `cccccccc-0000-0000-0000-000000000006`  | **ID token** optional claims: `email`, `upn`, `given_name`, `family_name`, `groups`; group claims `SecurityGroup`; overage limit `3`. Redirect URI `http://localhost:3000`. App roles `Tasks.Read`, `Tasks.Approve` (User); assignments: Alice → `Tasks.Approve`, group Developers → `Tasks.Read`. |
 | `local-api`        | `cccccccc-0000-0000-0000-000000000007`  | **Access token** optional claims: `email`, `upn`, `groups`; group claims `SecurityGroup`; overage limit `3`. Exposes scope `access_as_user`. |
 
 Seeded users (dev-only credentials, password `Password1!`):
 
 | User                    | Groups                                             | Group claim result |
 | ----------------------- | -------------------------------------------------- | ------------------ |
-| `alice@entralocal.dev`  | Engineering, Developers, Data Team, Local Admins (4) | **overage** (> limit 3) — token carries `_claim_names`/`_claim_sources` |
-| `bob@entralocal.dev`    | Engineering, Developers (2)                          | inline `groups` array |
+| `alice@entralocal.dev`  | Engineering, Developers, Data Team, Local Admins (4) | **overage** (> limit 3) — token carries `_claim_names`/`_claim_sources`; roles on local-web-client: Tasks.Approve, Tasks.Read |
+| `bob@entralocal.dev`    | Engineering, Developers (2)                          | inline `groups` array; roles: Tasks.Read (via Developers) |
 
 ---
 
@@ -164,7 +187,8 @@ Seeded users (dev-only credentials, password `Password1!`):
   "upn": "bob@entralocal.dev",
   "given_name": "Bob",
   "family_name": "Example",
-  "groups": ["bbbbbbbb-0000-0000-0000-000000000001", "bbbbbbbb-0000-0000-0000-000000000002"]
+  "groups": ["bbbbbbbb-0000-0000-0000-000000000001", "bbbbbbbb-0000-0000-0000-000000000002"],
+  "roles": ["Tasks.Read"]
 }
 ```
 
@@ -213,3 +237,7 @@ The same configuration is available over the Admin REST API (`/admin/api`):
 - `PATCH /admin/api/apps/{id}` — set `optionalClaims`, `groupMembershipClaims`, `groupOverageLimit`.
 - `POST /admin/api/apps/{id}/token-preview` — body `{ "userId": "...", "tokenType": "idToken" | "accessToken" }`.
 - `POST /admin/api/apps/{id}/token-generate` — body `{ "userId": "...", "tokenType": "idToken" | "accessToken", "tokenVariant": "valid" | "expired" | "invalidSignature" }`; returns the local-development token and its decoded claims. `tokenVariant` defaults to `valid`.
+- `GET|POST /admin/api/apps/{id}/roleAssignments`, `DELETE /admin/api/apps/{id}/roleAssignments/{assignmentId}` — body `{ "roleId", "principalType": "User" | "Group", "principalId" }`.
+- `GET /admin/api/users/{id}/appRoleAssignments` (direct only), `GET /admin/api/groups/{id}/appRoleAssignments`.
+- `appRoleAssignmentRequired` on `POST`/`PATCH /admin/api/apps/{id}`.
+- Graph (read-only): `GET /graph/v1.0/me/appRoleAssignments`, `/users/{id}/appRoleAssignments`, `/groups/{id}/appRoleAssignments`, `/servicePrincipals/{appId}/appRoleAssignedTo` — `resourceId` is the resource app's `appId` (the emulator has no service principals).

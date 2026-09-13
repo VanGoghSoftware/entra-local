@@ -59,6 +59,8 @@ surface MSAL needs for the most common developer scenarios. Treat anything not l
 
 - **SPA** — Authorization Code + PKCE (public client).
 - **Web app** — Authorization Code with a confidential client secret.
+- **Role-based authorization** — app roles assigned to users and groups appear as `roles` in ID and
+  delegated access tokens; optional "assignment required" refusal (AADSTS50105).
 - **Daemon / service** — Client Credentials (app-only token with app roles).
 - **CLI / device** — Device Code flow (RFC 8628).
 - **Token refresh** — rotating refresh tokens.
@@ -69,7 +71,7 @@ surface MSAL needs for the most common developer scenarios. Treat anything not l
 - OIDC discovery (`.well-known/openid-configuration`) and JWKS.
 - `authorize`, `token`, `devicecode`, `userinfo`, and front-channel `logout`.
 - Real RS256-signed ID and access tokens, verifiable against the JWKS endpoint.
-- Minimal Microsoft Graph: read-only `/me`, `/users`, `/groups`.
+- Minimal Microsoft Graph: read-only `/me`, `/users`, `/groups`, `appRoleAssignments`.
 - Admin REST API + web portal to manage users, groups, and app registrations.
 
 ### ❌ Not emulated
@@ -79,7 +81,8 @@ surface MSAL needs for the most common developer scenarios. Treat anything not l
 - On-Behalf-Of (OBO), SAML 2.0, and WS-Federation.
 - MFA, Conditional Access, Identity Protection, and consent prompts (apps are **auto-consented**).
 - Certificate / `private_key_jwt` client authentication (client **secrets** only).
-- Full Microsoft Graph (writes and most resources) and advanced claims/token policies.
+- Full Microsoft Graph (writes and most resources), service principals as directory objects, and
+  advanced token policies.
 
 See the [roadmap](specs/roadmap.md) for what may land in later iterations.
 

@@ -2,7 +2,7 @@
 
 - **Roadmap ref:** Not on the roadmap. Extends Iteration 1 feature #8 (app-only `roles`) and the token-configuration work (issue #15, migration 002) to **delegated** tokens. Related upstream discussion: issue #30 / PR #31 (auto-granted `roles` on delegated access tokens).
 - **Dependencies:** [#2](2026-06-22_02-sqlite-store-schema-seed.md) (`app_registrations`, `app_roles`, `users`, `groups`, `group_members`, migrations, seed), [#5](2026-06-22_05-token-service.md) (claim tables, token-response builder), [#6](2026-06-22_06-auth-code-pkce-signin.md) (authorize, canonical OAuth error convention), [#7](2026-06-22_07-refresh-token.md) (refresh grant), [#8](2026-06-22_08-client-credentials.md) (app-only auto-grant model, unchanged), [#10](2026-06-22_10-minimal-graph.md) (Graph envelope), [#11](2026-06-22_11-admin-rest-api.md) (admin error convention), [#12](2026-06-22_12-web-portal.md) (app detail sections), token configuration — issue #15 (`resolveAppTokenClaims`, token preview, `docs/token-configuration.md`), [feature #15 device code](2026-06-24_15-device-code-flow.md).
-- **Status:** 📝 Proposed (fork `VanGoghSoftware/entra-local`, branch `feature/app-role-assignments`). The `xx` in this file name is the upstream issue number, assigned when the issue is opened.
+- **Status:** ✅ Implemented (fork `VanGoghSoftware/entra-local`, branch `feature/app-role-assignments`). The `xx` in this file name is the upstream issue number, assigned when the issue is opened.
 
 > **Canonical-reference notice.** This spec owns **app-role assignment** (who holds which app role) and the **`roles` claim on user tokens** (ID token and delegated access token). It does **not** change the app-only auto-grant model owned by [#8](2026-06-22_08-client-credentials.md). It supersedes the "delegated tokens carry no `roles`" row of [#5](2026-06-22_05-token-service.md)'s claim table.
 
@@ -117,7 +117,7 @@ Resolution is a third step in `resolveAppTokenClaims` (`src/tokens/tokenConfig.t
 | `/authorize` with `prompt=none` and a session | same `access_denied` redirect (a silent request never renders HTML) |
 | `grant_type=authorization_code` (assignment removed between code issue and redemption) | `400 invalid_grant`, `error_codes: [50105]` |
 | `grant_type=refresh_token` | `400 invalid_grant`, `error_codes: [50105]` |
-| Device-code approval page, on account selection | the device code is **denied** (`store.deviceCodes.deny`), the page shows the message; the polling client receives the existing `authorization_declined` |
+| Device-code approval page, on account selection | the device code is **denied** (`store.deviceCodes.deny`), the page shows the message; the polling client receives the existing `access_denied` |
 
 `error_description`: `AADSTS50105: Your administrator has configured the application <displayName> ('<appId>') to block users unless they are specifically granted ('assigned') access to the application. The signed in user is blocked because they are not a direct member of a group with access, nor had access directly assigned by an administrator.` — the numeric code is added to `oauthErrors.ts` as an override on `access_denied` / `invalid_grant` (`errorCodes: [50105]`), leaving the existing defaults untouched.
 
@@ -242,7 +242,7 @@ sequenceDiagram
 - `auth-code.test.ts`: Alice's ID token from `local-web-client` carries `["Tasks.Approve","Tasks.Read"]`, Bob's `["Tasks.Read"]`; a user with no assignment has **no** `roles` key; the delegated access token for `local-api` carries the roles assigned there and none when the audience is Graph.
 - `refresh-token.test.ts`: after `DELETE` of an assignment, the refreshed tokens drop the role.
 - `auth-code.test.ts` (assignment required): with `appRoleAssignmentRequired: true` — unassigned user, interactive → `302 … error=access_denied` + `AADSTS50105`; `prompt=none` → same; assigned user → code. `authorization_code` redemption after the assignment is removed → `400 invalid_grant` `error_codes: [50105]`.
-- `device-code.test.ts`: approval by an unassigned user on a required app → poll returns `authorization_declined`.
+- `device-code.test.ts`: approval by an unassigned user on a required app → poll returns `access_denied`.
 - `admin-api.test.ts`: the six routes above, every error row in the admin table, DTO shape, `appRoleAssignmentRequired` on create/patch and in the app DTO; token-preview for Alice on `local-web-client` shows `roles`.
 - `graph.test.ts`: the four Graph routes, envelope, `resourceId` = `appId`, `/me/appRoleAssignments` rejects an app-only token, `/users/{id}` lists direct only.
 - `store.test.ts`: migration 003 applies on top of a 002 database with existing registrations; `reset` empties the new table; `seed` is idempotent.
