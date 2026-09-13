@@ -32,6 +32,8 @@ export interface IdTokenClaims {
   ver: typeof TOKEN_VERSION;
   email?: string;
   nonce?: string;
+  /** Assigned app roles of the client app (feature: app role assignments); omitted when none. */
+  roles?: string[];
   /** Configurable optional/group claims (feature: token configuration) are merged in at issuance. */
   [claim: string]: unknown;
 }
@@ -52,7 +54,7 @@ export interface AccessTokenClaims {
   oid?: string;
   /** Delegated only: space-delimited granted resource scope names. */
   scp?: string;
-  /** App-only only: granted app role values. */
+  /** App-only: auto-granted app roles. Delegated: the user's assigned roles on the resource app; omitted when none. */
   roles?: string[];
   /** Configurable optional/group claims (feature: token configuration) are merged in at issuance. */
   [claim: string]: unknown;

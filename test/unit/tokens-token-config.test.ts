@@ -253,3 +253,136 @@ describe('token configuration — preview (Portal_TokenPreview_MatchesIssuedToke
     expect(preview.claims._claim_names).toEqual({ groups: 'src1' });
   });
 });
+
+describe('app role assignments — roles claim', () => {
+  let fx: Fixture;
+  beforeEach(() => {
+    fx = makeFixture();
+  });
+  afterEach(() => fx.close());
+
+  it('Roles_IdToken_ComeFromTheClientAppAssignments_DirectAndInherited', async () => {
+    const alice = await fx.service.buildTokenResponse({
+      app: fx.webClient,
+      user: fx.alice,
+      scopes: ['openid', 'profile'],
+      resource: null,
+      grant: 'authorization_code',
+    });
+    expect(decodeJwt(alice.id_token as string).roles).toEqual(['Tasks.Approve', 'Tasks.Read']);
+
+    const bob = await fx.service.buildTokenResponse({
+      app: fx.webClient,
+      user: fx.bob,
+      scopes: ['openid', 'profile'],
+      resource: null,
+      grant: 'authorization_code',
+    });
+    expect(decodeJwt(bob.id_token as string).roles).toEqual(['Tasks.Read']);
+  });
+
+  it('Roles_Omitted_WhenTheUserHoldsNoAssignment', async () => {
+    const carol = fx.ts.store.users.create({
+      tenantId: TEST_TENANT_ID,
+      userPrincipalName: 'carol@entralocal.dev',
+      displayName: 'Carol',
+    });
+    const res = await fx.service.buildTokenResponse({
+      app: fx.webClient,
+      user: carol,
+      scopes: ['openid', 'profile'],
+      resource: `api://${SEED.appTokenApiId}`,
+      grant: 'authorization_code',
+    });
+    expect(decodeJwt(res.id_token as string)).not.toHaveProperty('roles');
+    expect(decodeJwt(res.access_token)).not.toHaveProperty('roles');
+  });
+
+  it('Roles_AccessToken_ComeFromTheResourceApp_NotTheClient', async () => {
+    // Give Bob a User-type role on local-api (the resource); his web-client roles must not leak in.
+    const apiRole = fx.ts.store.apps.addRole(SEED.appTokenApiId, {
+      value: 'Api.Read',
+      allowedMemberTypes: 'User',
+    });
+    fx.ts.store.appRoleAssignments.create({
+      appId: SEED.appTokenApiId,
+      roleId: apiRole.id,
+      principalType: 'User',
+      principalId: fx.bob.id,
+    });
+    const res = await fx.service.buildTokenResponse({
+      app: fx.webClient,
+      user: fx.bob,
+      scopes: ['openid', `api://${SEED.appTokenApiId}/${SEED.tokenApiScopeValue}`],
+      resource: `api://${SEED.appTokenApiId}`,
+      grant: 'authorization_code',
+    });
+    expect(decodeJwt(res.access_token).roles).toEqual(['Api.Read']);
+    expect(decodeJwt(res.id_token as string).roles).toEqual(['Tasks.Read']);
+
+    // Alice holds nothing on local-api: her access token carries no roles at all.
+    const alice = await fx.service.buildTokenResponse({
+      app: fx.webClient,
+      user: fx.alice,
+      scopes: ['openid', `api://${SEED.appTokenApiId}/${SEED.tokenApiScopeValue}`],
+      resource: `api://${SEED.appTokenApiId}`,
+      grant: 'authorization_code',
+    });
+    expect(decodeJwt(alice.access_token)).not.toHaveProperty('roles');
+  });
+
+  it('Roles_DisabledRole_IsNotEmitted', async () => {
+    fx.ts.store.apps.updateRole(SEED.appWebClientId, SEED.webClientReadRoleId, {
+      isEnabled: false,
+    });
+    const res = await fx.service.buildTokenResponse({
+      app: fx.webClient,
+      user: fx.bob,
+      scopes: ['openid'],
+      resource: null,
+      grant: 'authorization_code',
+    });
+    expect(decodeJwt(res.id_token as string)).not.toHaveProperty('roles');
+  });
+
+  it('Roles_Preview_MatchesIssuance', async () => {
+    const preview = fx.service.previewToken({
+      app: fx.webClient,
+      user: fx.alice,
+      tokenType: 'idToken',
+    });
+    const issued = await fx.service.buildTokenResponse({
+      app: fx.webClient,
+      user: fx.alice,
+      scopes: ['openid', 'profile', 'email'],
+      resource: null,
+      grant: 'authorization_code',
+    });
+    expect(preview.claims.roles).toEqual(decodeJwt(issued.id_token as string).roles);
+    expect(preview.claims.roles).toEqual(['Tasks.Approve', 'Tasks.Read']);
+  });
+
+  it('Roles_AsOptionalClaim_IsIgnoredWithAHintTowardsAssignments', async () => {
+    const warnings: string[] = [];
+    const service = createTokenService({
+      store: fx.ts.store,
+      signing: fx.signing,
+      config: fx.config,
+      clock: () => BASE_NOW,
+      warn: (m) => warnings.push(m),
+    });
+    fx.ts.store.apps.update(SEED.appSpaId, {
+      optionalClaims: { idToken: [{ name: 'roles', essential: false }], accessToken: [] },
+    });
+    const spa = fx.ts.store.apps.getByAppId(SEED.appSpaId) as AppRegistration;
+    const res = await service.buildTokenResponse({
+      app: spa,
+      user: fx.bob,
+      scopes: ['openid'],
+      resource: null,
+      grant: 'authorization_code',
+    });
+    expect(decodeJwt(res.id_token as string)).not.toHaveProperty('roles');
+    expect(warnings.some((w) => w.includes("'roles'") && w.includes('assignment'))).toBe(true);
+  });
+});

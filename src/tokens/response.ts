@@ -103,7 +103,13 @@ export function createTokenResponseBuilder(deps: TokenResponseBuilderDeps): Toke
   /** Log a warning for each configured optional claim Entra Local does not support. */
   const warnUnsupported = (appId: string, kind: string, names: string[]): void => {
     for (const name of names) {
-      warn(`Ignoring unsupported ${kind} optional claim '${name}' configured on app '${appId}'.`);
+      const hint =
+        name === 'roles'
+          ? " 'roles' is emitted from app role assignments, not from optional claims."
+          : '';
+      warn(
+        `Ignoring unsupported ${kind} optional claim '${name}' configured on app '${appId}'.${hint}`,
+      );
     }
   };
 

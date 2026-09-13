@@ -17,6 +17,8 @@ import type { AppRegistration, OptionalClaim, OptionalClaimsConfig, User } from 
  *   to the caller so a warning can be logged).
  * - `groups` is emitted only when group claims are enabled; when the membership count exceeds the
  *   configured overage limit an Entra-style overage payload replaces the array.
+ * - `roles` on user tokens comes from app role assignments (client app for ID tokens, resource app
+ *   for access tokens) and is omitted when the user holds none.
  */
 
 /** Which token collection an optional-claim set applies to (SAML is intentionally out of scope). */
@@ -179,6 +181,29 @@ export function resolveGroupClaims(
   return { claims: { groups: groupIds }, overage: false };
 }
 
+/** Result of resolving the `roles` claim for a user token. */
+export interface RoleClaimsResult {
+  /** `{ roles: [...] }` when the user holds at least one role, otherwise `{}`. */
+  claims: Record<string, unknown>;
+  roles: string[];
+}
+
+/**
+ * Resolve the `roles` claim of a **user** token from app role assignments: the enabled `User`-type
+ * roles of `app` — the client app for an ID token, the resource app for an access token — that the
+ * user holds directly or through a group. Omitted entirely when the user holds none: Entra emits no
+ * `roles` claim for an unassigned user (and never `[]` on a user token). App-only tokens are not
+ * resolved here; they keep the client-credentials auto-grant.
+ */
+export function resolveRoleClaims(
+  app: AppRegistration,
+  user: User,
+  store: Store,
+): RoleClaimsResult {
+  const roles = store.appRoleAssignments.rolesForUser(app.appId, user.id);
+  return { claims: roles.length > 0 ? { roles } : {}, roles };
+}
+
 /** Parameters for {@link resolveAppTokenClaims}. */
 export interface ResolveAppTokenClaimsParams {
   /** The app whose token configuration drives the claims (client app for ID, resource for access). */
@@ -200,6 +225,8 @@ export interface ResolveAppTokenClaimsResult {
   unsupportedClaims: string[];
   /** Whether the group overage payload was emitted instead of a `groups` array. */
   groupOverage: boolean;
+  /** The assigned app roles emitted as `roles` (empty when the claim is omitted). */
+  roles: string[];
 }
 
 /**
@@ -217,9 +244,11 @@ export function resolveAppTokenClaims(
     ipAddress,
   });
   const group = resolveGroupClaims(app, kind, user, store, config);
+  const role = resolveRoleClaims(app, user, store);
   return {
-    claims: { ...optional.claims, ...group.claims },
+    claims: { ...optional.claims, ...group.claims, ...role.claims },
     unsupportedClaims: optional.unsupported,
     groupOverage: group.overage,
+    roles: role.roles,
   };
 }
