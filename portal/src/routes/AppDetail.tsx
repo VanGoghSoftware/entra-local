@@ -699,7 +699,7 @@ function AppRoleList({ app, onChange }: { app: App; onChange: () => void }): JSX
       {adding && (
         <div className="add-row">
           <TextInput
-            style={{ width: 200 }}
+            style={{ flex: '0 1 200px', minWidth: 140 }}
             value={value}
             invalid={!!error}
             onChange={(e) => setValue(e.target.value)}
@@ -707,7 +707,7 @@ function AppRoleList({ app, onChange }: { app: App; onChange: () => void }): JSX
             aria-label="Role value"
           />
           <TextInput
-            style={{ flex: 1 }}
+            style={{ flex: '1 1 200px', minWidth: 160 }}
             value={display}
             onChange={(e) => setDisplay(e.target.value)}
             placeholder="Display name (optional)"
@@ -715,6 +715,7 @@ function AppRoleList({ app, onChange }: { app: App; onChange: () => void }): JSX
           />
           <Select
             aria-label="Member types"
+            style={{ flex: '0 0 auto', width: 180 }}
             value={memberTypes}
             onChange={(e) => setMemberTypes(e.target.value)}
           >

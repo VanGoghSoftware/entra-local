@@ -113,53 +113,56 @@ export function AppRoleAssignmentList({
           </span>
         )}
       </div>
-      <table className="dt">
-        <thead>
-          <tr>
-            <th>Principal</th>
-            <th>Type</th>
-            <th>Role</th>
-            <th>Assigned</th>
-            <th className="col-actions"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {loading && !assignments && <SkeletonRows rows={2} cols={5} />}
-          {assignments && assignments.length === 0 && (
+      <div className="dt-scroll">
+        <table className="dt">
+          <thead>
             <tr>
-              <td colSpan={5} className="muted b-sm">
-                No users or groups are assigned. Sign-ins succeed without a `roles` claim.
-              </td>
+              <th>Principal</th>
+              <th>Type</th>
+              <th>Role</th>
+              <th>Assigned</th>
+              <th className="col-actions"></th>
             </tr>
-          )}
-          {assignments?.map((assignment) => (
-            <tr key={assignment.id}>
-              <td>
-                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  {assignment.principalDisplayName}
-                  <IdChip value={assignment.principalId} title="Principal id" />
-                </span>
-              </td>
-              <td>
-                <span className="chip-plain">{assignment.principalType}</span>
-              </td>
-              <td>
-                <span className="chip-plain">{assignment.roleValue}</span>
-              </td>
-              <td className="muted b-sm">{new Date(assignment.createdAt).toLocaleString()}</td>
-              <td className="col-actions">
-                <Button size="sm" onClick={() => void remove(assignment)}>
-                  Remove
-                </Button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {loading && !assignments && <SkeletonRows rows={2} cols={5} />}
+            {assignments && assignments.length === 0 && (
+              <tr>
+                <td colSpan={5} className="muted b-sm">
+                  No users or groups are assigned. Sign-ins succeed without a `roles` claim.
+                </td>
+              </tr>
+            )}
+            {assignments?.map((assignment) => (
+              <tr key={assignment.id}>
+                <td>
+                  <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {assignment.principalDisplayName}
+                    <IdChip value={assignment.principalId} title="Principal id" />
+                  </span>
+                </td>
+                <td>
+                  <span className="chip-plain">{assignment.principalType}</span>
+                </td>
+                <td>
+                  <span className="chip-plain">{assignment.roleValue}</span>
+                </td>
+                <td className="muted b-sm">{new Date(assignment.createdAt).toLocaleString()}</td>
+                <td className="col-actions">
+                  <Button size="sm" onClick={() => void remove(assignment)}>
+                    Remove
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {adding && (
         <div className="add-row">
           <Select
             aria-label="Principal type"
+            style={{ flex: '0 0 auto', width: 120 }}
             value={principalType}
             onChange={(e) => {
               setPrincipalType(e.target.value as PrincipalType);
@@ -171,6 +174,7 @@ export function AppRoleAssignmentList({
           </Select>
           <Select
             aria-label="Principal"
+            style={{ flex: '1 1 180px', minWidth: 160 }}
             value={principalId}
             onChange={(e) => setPrincipalId(e.target.value)}
           >
@@ -181,7 +185,12 @@ export function AppRoleAssignmentList({
               </option>
             ))}
           </Select>
-          <Select aria-label="Role" value={roleId} onChange={(e) => setRoleId(e.target.value)}>
+          <Select
+            aria-label="Role"
+            style={{ flex: '1 1 180px', minWidth: 160 }}
+            value={roleId}
+            onChange={(e) => setRoleId(e.target.value)}
+          >
             <option value="">Choose a role…</option>
             {assignableRoles.map((role) => (
               <option key={role.id} value={role.id}>

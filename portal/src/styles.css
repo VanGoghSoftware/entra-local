@@ -1174,8 +1174,18 @@ textarea.input {
   align-items: center;
   margin-right: 6px;
 }
+/* A table that is wider than the detail panel scrolls inside its own box instead of spilling out of
+   the card. The panel is narrow on a laptop-width window, so a five-column table does not fit. */
+.dt-scroll {
+  overflow-x: auto;
+}
+
+/* Wraps rather than crushes: these rows carry three or four controls, and in a narrow panel a
+   non-wrapping flex row squeezes the text inputs down to a few pixels instead of moving a control
+   to the next line. */
 .add-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   padding: 12px 16px;
