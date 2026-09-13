@@ -2,7 +2,7 @@ import type { FastifyReply, FastifyRequest, RouteHandlerMethod } from 'fastify';
 import type { Config } from '../config/schema.js';
 import { extractBearer } from '../identity/bearer.js';
 import { graphMetadataContextUrl, graphPublicUrl } from '../http/pathmap.js';
-import type { Group, User } from '../store/types.js';
+import type { AppRoleAssignment, Group, User } from '../store/types.js';
 import type { Store } from '../store/store.js';
 import type { AccessTokenClaims } from '../tokens/claims.js';
 import type { TokenService } from '../tokens/service.js';
@@ -13,6 +13,11 @@ import type { TokenService } from '../tokens/service.js';
  * caller's Bearer access token via the #5 token service against the live JWKS/issuer, requiring the
  * Graph audience (`GRAPH_RESOURCE_ID`) and accepting the emulator's `ver:"2.0"` tokens. This is where
  * the mint→consume loop closes: a token minted by #5/#6/#8 is consumed here.
+ *
+ * Also read-only, app role assignments: `GET /graph/v1.0/{me,users/{id},groups/{id}}
+ * /appRoleAssignments` and `/servicePrincipals/{id}/appRoleAssignedTo`. Divergence: Entra Local has
+ * no service principals, so `resourceId` on an assignment is the resource app's `appId`, and
+ * `/servicePrincipals/{id}` takes that same `appId`.
  *
  * Authorization model (owned by this feature's spec): possession of a valid Graph-audience token is
  * sufficient — no fine-grained Graph scope/role enforcement in MVP. `/me` additionally requires a
@@ -53,6 +58,22 @@ interface GraphGroup {
   description: string | null;
   mailEnabled: boolean;
   securityEnabled: boolean;
+}
+
+/**
+ * Graph `microsoft.graph.appRoleAssignment` subset. Divergence: Entra Local has no service
+ * principals, so `resourceId` is the resource app's `appId` (and `/servicePrincipals/{id}` takes it).
+ */
+interface GraphAppRoleAssignment {
+  id: string;
+  appRoleId: string;
+  createdDateTime: string;
+  deletedDateTime: null;
+  principalDisplayName: string;
+  principalId: string;
+  principalType: 'User' | 'Group';
+  resourceDisplayName: string;
+  resourceId: string;
 }
 
 /** Default page size and hard cap for `$top` (mirrors real Graph defaults). */
@@ -103,6 +124,25 @@ function toGraphGroup(group: Group, context?: string): GraphGroup {
     description: group.description,
     mailEnabled: false,
     securityEnabled: true,
+  };
+}
+
+/** Map a store assignment to the Graph shape, resolving the display names it carries. */
+function toGraphAppRoleAssignment(store: Store, a: AppRoleAssignment): GraphAppRoleAssignment {
+  const principalDisplayName =
+    a.principalType === 'User'
+      ? store.users.getById(a.principalId)?.displayName
+      : store.groups.getById(a.principalId)?.displayName;
+  return {
+    id: a.id,
+    appRoleId: a.roleId,
+    createdDateTime: new Date(a.createdAt * 1000).toISOString(),
+    deletedDateTime: null,
+    principalDisplayName: principalDisplayName ?? a.principalId,
+    principalId: a.principalId,
+    principalType: a.principalType,
+    resourceDisplayName: store.apps.getByAppId(a.appId)?.displayName ?? a.appId,
+    resourceId: a.appId,
   };
 }
 
@@ -177,6 +217,10 @@ export interface GraphHandlers {
   listGroups: RouteHandlerMethod;
   getGroup: RouteHandlerMethod;
   listGroupMembers: RouteHandlerMethod;
+  meAppRoleAssignments: RouteHandlerMethod;
+  getUserAppRoleAssignments: RouteHandlerMethod;
+  getGroupAppRoleAssignments: RouteHandlerMethod;
+  getServicePrincipalAppRoleAssignedTo: RouteHandlerMethod;
 }
 
 /** Build the Graph handlers bound to the store, token service and config. */
@@ -344,6 +388,106 @@ export function createGraphHandlers(deps: GraphDeps): GraphHandlers {
       const members = store.groups.listMembers(id);
       sendCollection(request, reply, config, 'directoryObjects', members.length, (skip, top) =>
         members.slice(skip, skip + top).map((u) => toGraphUser(u)),
+      );
+    },
+
+    async meAppRoleAssignments(request, reply) {
+      const claims = await authenticate(request, reply);
+      if (!claims) return;
+      if (claims.oid == null || claims.oid === '') {
+        sendGraphError(
+          reply,
+          403,
+          'Authorization_RequestDenied',
+          '/me/appRoleAssignments requires a delegated user token.',
+        );
+        return;
+      }
+      if (!store.users.getById(claims.oid)) {
+        sendGraphError(reply, 404, 'Request_ResourceNotFound', 'The signed-in user was not found.');
+        return;
+      }
+      const items = store.appRoleAssignments.listForUser(claims.oid);
+      sendCollection(
+        request,
+        reply,
+        config,
+        `users('${claims.oid}')/appRoleAssignments`,
+        items.length,
+        (skip, top) => items.slice(skip, skip + top).map((a) => toGraphAppRoleAssignment(store, a)),
+      );
+    },
+
+    async getUserAppRoleAssignments(request, reply) {
+      const claims = await authenticate(request, reply);
+      if (!claims) return;
+      const id = (request.params as { id: string }).id;
+      const user = store.users.getById(id) ?? store.users.getByUpn(id);
+      if (!user) {
+        sendGraphError(
+          reply,
+          404,
+          'Request_ResourceNotFound',
+          `No user matches the identifier '${id}'.`,
+        );
+        return;
+      }
+      const items = store.appRoleAssignments.listForUser(user.id);
+      sendCollection(
+        request,
+        reply,
+        config,
+        `users('${user.id}')/appRoleAssignments`,
+        items.length,
+        (skip, top) => items.slice(skip, skip + top).map((a) => toGraphAppRoleAssignment(store, a)),
+      );
+    },
+
+    async getGroupAppRoleAssignments(request, reply) {
+      const claims = await authenticate(request, reply);
+      if (!claims) return;
+      const id = (request.params as { id: string }).id;
+      if (!store.groups.getById(id)) {
+        sendGraphError(
+          reply,
+          404,
+          'Request_ResourceNotFound',
+          `No group matches the identifier '${id}'.`,
+        );
+        return;
+      }
+      const items = store.appRoleAssignments.listForGroup(id);
+      sendCollection(
+        request,
+        reply,
+        config,
+        `groups('${id}')/appRoleAssignments`,
+        items.length,
+        (skip, top) => items.slice(skip, skip + top).map((a) => toGraphAppRoleAssignment(store, a)),
+      );
+    },
+
+    async getServicePrincipalAppRoleAssignedTo(request, reply) {
+      const claims = await authenticate(request, reply);
+      if (!claims) return;
+      const id = (request.params as { id: string }).id;
+      if (!store.apps.getByAppId(id)) {
+        sendGraphError(
+          reply,
+          404,
+          'Request_ResourceNotFound',
+          `No service principal matches the identifier '${id}'.`,
+        );
+        return;
+      }
+      const items = store.appRoleAssignments.listForApp(id);
+      sendCollection(
+        request,
+        reply,
+        config,
+        `servicePrincipals('${id}')/appRoleAssignedTo`,
+        items.length,
+        (skip, top) => items.slice(skip, skip + top).map((a) => toGraphAppRoleAssignment(store, a)),
       );
     },
   };

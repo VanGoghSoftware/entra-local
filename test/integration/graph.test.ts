@@ -488,3 +488,93 @@ describe('Graph response shape (criterion 10)', () => {
     }
   });
 });
+
+describe('Graph app role assignments (read-only)', () => {
+  const WEB = SEED.appWebClientId;
+
+  it('/users/{id}/appRoleAssignments lists direct assignments in Graph shape', async () => {
+    ctx = await buildTestApp();
+    const token = await delegatedToken(ctx);
+    const res = await graphGet(
+      ctx,
+      `/graph/v1.0/users/${SEED.userAliceId}/appRoleAssignments`,
+      token,
+    );
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      '@odata.context': string;
+      value: Record<string, unknown>[];
+    };
+    expect(body['@odata.context']).toBe(
+      `${ctx.config.publicOrigin}/graph/v1.0/$metadata#users('${SEED.userAliceId}')/appRoleAssignments`,
+    );
+    // Alice: Tasks.Approve directly; the group-inherited Tasks.Read is NOT listed here (Graph parity).
+    expect(body.value).toHaveLength(1);
+    expect(body.value[0]).toMatchObject({
+      id: SEED.assignmentAliceApproveId,
+      appRoleId: SEED.webClientApproveRoleId,
+      principalId: SEED.userAliceId,
+      principalType: 'User',
+      principalDisplayName: 'Alice Example',
+      resourceId: WEB,
+      resourceDisplayName: 'local-web-client',
+      deletedDateTime: null,
+    });
+    expect(typeof body.value[0]!.createdDateTime).toBe('string');
+  });
+
+  it('/me/appRoleAssignments requires a delegated token', async () => {
+    ctx = await buildTestApp();
+    const delegated = await delegatedToken(ctx);
+    const me = await graphGet(ctx, '/graph/v1.0/me/appRoleAssignments', delegated);
+    expect(me.statusCode).toBe(200);
+    expect((me.json() as { value: unknown[] }).value).toHaveLength(1);
+
+    const appOnly = await appOnlyToken(ctx);
+    const denied = await graphGet(ctx, '/graph/v1.0/me/appRoleAssignments', appOnly);
+    expect(denied.statusCode).toBe(403);
+
+    const anonymous = await graphGet(ctx, '/graph/v1.0/me/appRoleAssignments');
+    expect(anonymous.statusCode).toBe(401);
+  });
+
+  it('/groups/{id}/appRoleAssignments and /servicePrincipals/{appId}/appRoleAssignedTo', async () => {
+    ctx = await buildTestApp();
+    const token = await delegatedToken(ctx);
+
+    const group = await graphGet(
+      ctx,
+      `/graph/v1.0/groups/${SEED.groupDevelopersId}/appRoleAssignments`,
+      token,
+    );
+    expect(group.statusCode).toBe(200);
+    const groupBody = group.json() as { value: Record<string, unknown>[] };
+    expect(groupBody.value).toHaveLength(1);
+    expect(groupBody.value[0]).toMatchObject({
+      principalType: 'Group',
+      principalDisplayName: 'Developers',
+      appRoleId: SEED.webClientReadRoleId,
+    });
+
+    const sp = await graphGet(ctx, `/graph/v1.0/servicePrincipals/${WEB}/appRoleAssignedTo`, token);
+    expect(sp.statusCode).toBe(200);
+    const spBody = sp.json() as { '@odata.context': string; value: Record<string, unknown>[] };
+    expect(spBody['@odata.context']).toBe(
+      `${ctx.config.publicOrigin}/graph/v1.0/$metadata#servicePrincipals('${WEB}')/appRoleAssignedTo`,
+    );
+    expect(spBody.value.map((a) => a.principalType).sort()).toEqual(['Group', 'User']);
+
+    const unknownSp = await graphGet(
+      ctx,
+      '/graph/v1.0/servicePrincipals/cccccccc-0000-0000-0000-00000000dead/appRoleAssignedTo',
+      token,
+    );
+    expect(unknownSp.statusCode).toBe(404);
+    const unknownGroup = await graphGet(
+      ctx,
+      '/graph/v1.0/groups/bbbbbbbb-0000-0000-0000-00000000dead/appRoleAssignments',
+      token,
+    );
+    expect(unknownGroup.statusCode).toBe(404);
+  });
+});

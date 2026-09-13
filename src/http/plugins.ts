@@ -64,6 +64,16 @@ export async function registerGraphRoutes(app: FastifyInstance): Promise<void> {
       graph.get('/v1.0/groups/:id', graphApi.getGroup);
       graph.get('/v1.0/groups/:id/members', graphApi.listGroupMembers);
 
+      // App role assignments (read-only): who holds which app role. `/servicePrincipals/{id}` takes
+      // the resource app's appId — the emulator has no service principals.
+      graph.get('/v1.0/me/appRoleAssignments', graphApi.meAppRoleAssignments);
+      graph.get('/v1.0/users/:id/appRoleAssignments', graphApi.getUserAppRoleAssignments);
+      graph.get('/v1.0/groups/:id/appRoleAssignments', graphApi.getGroupAppRoleAssignments);
+      graph.get(
+        '/v1.0/servicePrincipals/:id/appRoleAssignedTo',
+        graphApi.getServicePrincipalAppRoleAssignedTo,
+      );
+
       // OIDC UserInfo (#9). Locked single-origin path (overrides draft global-spec). POST mirrors
       // GET for OIDC parity.
       graph.get('/oidc/userinfo', userInfo);
