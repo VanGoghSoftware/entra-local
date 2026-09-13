@@ -117,9 +117,9 @@ Resolution is a third step in `resolveAppTokenClaims` (`src/tokens/tokenConfig.t
 | `/authorize` with `prompt=none` and a session | same `access_denied` redirect (a silent request never renders HTML) |
 | `grant_type=authorization_code` (assignment removed between code issue and redemption) | `400 invalid_grant`, `error_codes: [50105]` |
 | `grant_type=refresh_token` | `400 invalid_grant`, `error_codes: [50105]` |
-| Device-code approval page, on account selection | the device code is **denied** (`store.deviceCodes.deny`), the page shows the message; the polling client receives the existing `access_denied` |
+| Device-code approval page, on approval | the device code is **denied** (`store.deviceCodes.deny`), the page shows the message; the polling client receives the existing `access_denied` |
 
-`error_description`: `AADSTS50105: Your administrator has configured the application <displayName> ('<appId>') to block users unless they are specifically granted ('assigned') access to the application. The signed in user is blocked because they are not a direct member of a group with access, nor had access directly assigned by an administrator.` — the numeric code is added to `oauthErrors.ts` as an override on `access_denied` / `invalid_grant` (`errorCodes: [50105]`), leaving the existing defaults untouched.
+`error_description`: `AADSTS50105: Your administrator has configured the application <displayName> ('<appId>') to block users unless they are specifically granted ('assigned') access to the application. The signed in user is blocked because they are not a direct member of a group with access, nor had access directly assigned by an administrator.` — the numeric code (`ASSIGNMENT_REQUIRED_ERROR_CODE`) is defined in `assignmentRequired.ts` and passed through the existing `errorCodes` option in `oauthErrors.ts` as an override on `access_denied` / `invalid_grant` (`errorCodes: [50105]`), leaving the existing defaults untouched.
 
 When `false` (default, and for every existing registration): behaviour is exactly today's — everybody signs in; `roles` is present only for the assigned.
 
@@ -178,14 +178,18 @@ Collections use `@odata.context` (`$metadata#users('<id>')/appRoleAssignments` e
 
 ### Portal ([#12](2026-06-22_12-web-portal.md); `DESIGN.md` status is *defined*, follow it)
 
-App detail page, new section `{ id: 'assignments', label: 'Users and groups' }` inserted after **App roles**:
+App detail page, new section `{ id: 'assignments', label: 'Users and groups' }` inserted after **App
+roles**: `AppRoleAssignmentList` in `portal/src/routes/AppRoleAssignments.tsx`, mirroring the existing
+`AppRoleList` in `AppDetail.tsx` rather than introducing a new interaction pattern — an inline add row
+instead of a dialog, a plain button per row instead of an overflow menu, plain `<select>` elements
+instead of a searchable one:
 
 - **Assignment required** toggle (writes `PATCH …/apps/:id` `appRoleAssignmentRequired`), with one line of help text: *"When on, users without an assignment are refused at sign-in (AADSTS50105)."*
-- **Table** of assignments: principal (display name + `IdChip`), type, role value, created, row overflow menu with *Remove*.
-- **Add assignment** dialog: principal type (User / Group), principal (searchable select over `/admin/api/users` or `/admin/api/groups`), role (enabled roles of this app whose `allowedMemberTypes` includes `User`; the dialog says so when there is none and links to the App roles section). Submits `POST …/roleAssignments`; `409` and `400` surface inline.
+- **Table** of assignments: principal (display name + `IdChip`), type, role value, created, a plain **Remove** button per row.
+- **Add assignment**: an **+ Add assignment** button toggles an inline row (not a dialog) with principal type (`User` / `Group`), principal (a plain `<select>` over the first 200 results of `/admin/api/users` or `/admin/api/groups` — not a searchable select), and role (enabled roles of this app whose `allowedMemberTypes` includes `User`; a sentence points at the **App roles** section, not a link, when there is none). Submits `POST …/roleAssignments`; `409` and `400` surface inline.
 - Empty state: *"No users or groups are assigned. Sign-ins succeed without a `roles` claim."*
 
-API client additions in `portal/src/api/client.ts` + types; tests in `portal/src/routes/AppDetail.test.tsx` with the msw server in `portal/src/test/server.ts` (tab switch, table render, add, remove, toggle).
+API client additions in `portal/src/api/client.ts` + types; tests in `portal/src/routes/AppRoleAssignments.test.tsx` with the msw server in `portal/src/test/server.ts` (tab switch, table render, add, remove, toggle).
 
 ### Seed additions (`src/store/seed.ts`, all `INSERT OR IGNORE`, fixed ids)
 
@@ -247,7 +251,7 @@ sequenceDiagram
 - `graph.test.ts`: the four Graph routes, envelope, `resourceId` = `appId`, `/me/appRoleAssignments` rejects an app-only token, `/users/{id}` lists direct only.
 - `store.test.ts`: migration 003 applies on top of a 002 database with existing registrations; `reset` empties the new table; `seed` is idempotent.
 
-**Portal (`portal/src/routes/AppDetail.test.tsx`)**: the section appears after App roles; table renders msw data; add dialog posts and refreshes; remove deletes; toggle patches; empty state text.
+**Portal (`portal/src/routes/AppRoleAssignments.test.tsx`)**: the section appears after App roles; table renders msw data; the inline add row posts and refreshes; remove deletes; toggle patches; empty state text.
 
 **Quality gates (CONTRIBUTING):** `pnpm lint`, `pnpm typecheck`, `pnpm test` green; the Docker run-target job still passes (no config change).
 
@@ -275,8 +279,8 @@ sequenceDiagram
 |---|---|
 | Store | `src/store/migrations/migration-003-app-role-assignments.ts`, registered wherever migration 002 is, `src/store/repositories/appRoleAssignments.ts`, `repositories/index.ts`, `repositories/apps.ts` (new column), `src/store/types.ts`, `src/store/reset.ts`, `src/store/seed.ts` |
 | Tokens | `src/tokens/tokenConfig.ts` (roles step), `src/tokens/claims.ts` (`roles?` on `IdTokenClaims`), `docs/token-configuration.md` |
-| Identity | `src/identity/authorize.ts` (required check before `issueCodeAndRedirect`, both paths), `src/identity/token.ts` (`authorization_code`, `refresh_token`), `src/identity/deviceApproval.ts`, `src/identity/oauthErrors.ts` (50105) |
+| Identity | `src/identity/authorize.ts` (required check before `issueCodeAndRedirect`, both paths), `src/identity/token.ts` (`authorization_code`, `refresh_token`), `src/identity/deviceApproval.ts`, `src/identity/assignmentRequired.ts` (50105) |
 | Admin | `src/admin/routes.apps.ts`, `routes.users.ts`, `routes.groups.ts`, `schemas.ts`, `dto.ts` |
 | Graph | `src/graph/handlers.ts` (+ route registration where `/users/:id/memberOf` is registered) |
-| Portal | `portal/src/routes/AppDetail.tsx`, `portal/src/api/client.ts`, `portal/src/api/types.ts`, `portal/src/routes/AppDetail.test.tsx`, `portal/src/test/server.ts` |
+| Portal | `portal/src/routes/AppDetail.tsx` (section wiring), `portal/src/routes/AppRoleAssignments.tsx`, `portal/src/routes/AppRoleAssignments.test.tsx`, `portal/src/api/client.ts`, `portal/src/api/types.ts`, `portal/src/test/server.ts` |
 | Docs | this spec, `specs/roadmap.md`, `README.md`, `memory/decisions.md` |

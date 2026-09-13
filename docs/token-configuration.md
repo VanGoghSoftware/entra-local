@@ -165,10 +165,10 @@ Seeded into the emulator (see [`src/store/seed.ts`](../src/store/seed.ts)) with 
 
 Seeded users (dev-only credentials, password `Password1!`):
 
-| User                    | Groups                                             | Group claim result |
-| ----------------------- | -------------------------------------------------- | ------------------ |
-| `alice@entralocal.dev`  | Engineering, Developers, Data Team, Local Admins (4) | **overage** (> limit 3) — token carries `_claim_names`/`_claim_sources`; roles on local-web-client: Tasks.Approve, Tasks.Read |
-| `bob@entralocal.dev`    | Engineering, Developers (2)                          | inline `groups` array; roles: Tasks.Read (via Developers) |
+| User                    | Groups                                             | Group claim result | Roles on `local-web-client` |
+| ----------------------- | -------------------------------------------------- | ------------------ | ---------------------------- |
+| `alice@entralocal.dev`  | Engineering, Developers, Data Team, Local Admins (4) | **overage** (> limit 3) — token carries `_claim_names`/`_claim_sources` | `Tasks.Approve`, `Tasks.Read` |
+| `bob@entralocal.dev`    | Engineering, Developers (2)                          | inline `groups` array | `Tasks.Read` (via Developers) |
 
 ---
 
