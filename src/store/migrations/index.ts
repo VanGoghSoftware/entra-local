@@ -4,6 +4,7 @@ import type { Clock } from '../util.js';
 import { MIGRATION_001_INITIAL } from './migration-001-initial.js';
 import { MIGRATION_002_TOKEN_CONFIG } from './migration-002-token-config.js';
 import { MIGRATION_003_APP_ROLE_ASSIGNMENTS } from './migration-003-app-role-assignments.js';
+import { MIGRATION_004_CASCADE_SIGN_IN_ARTEFACTS } from './migration-004-cascade-sign-in-artefacts.js';
 
 /** A forward-only migration: a version number and the SQL that brings the schema to it. */
 export interface Migration {
@@ -17,6 +18,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial', sql: MIGRATION_001_INITIAL },
   { version: 2, name: 'token-config', sql: MIGRATION_002_TOKEN_CONFIG },
   { version: 3, name: 'app-role-assignments', sql: MIGRATION_003_APP_ROLE_ASSIGNMENTS },
+  { version: 4, name: 'cascade-sign-in-artefacts', sql: MIGRATION_004_CASCADE_SIGN_IN_ARTEFACTS },
 ];
 
 /** Ensure the migration-tracking table exists. */
