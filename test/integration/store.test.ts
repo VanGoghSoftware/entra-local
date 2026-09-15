@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '../../src/store/db.js';
-import { runMigrations } from '../../src/store/migrations/index.js';
+import { MIGRATIONS, runMigrations } from '../../src/store/migrations/index.js';
 import { createStore } from '../../src/store/store.js';
 import { buildTestApp } from '../helpers/buildTestApp.js';
 import { TEST_TENANT_ID, TMP_DIR } from '../helpers/constants.js';
@@ -50,7 +50,7 @@ describe('store plugin: migrations (criterion 1)', () => {
           version: number;
         }[]
       ).map((r) => r.version);
-      expect(versions).toEqual([1, 2]);
+      expect(versions).toEqual([1, 2, 3]);
     } finally {
       await ctx.close();
     }
@@ -61,13 +61,85 @@ describe('store plugin: migrations (criterion 1)', () => {
     const dbPath = join(TMP_DIR, `${randomUUID()}.db`);
     try {
       const db1 = openDatabase(dbPath);
-      expect(runMigrations(db1, () => 1)).toEqual([1, 2]);
+      expect(runMigrations(db1, () => 1)).toEqual([1, 2, 3]);
       db1.close();
 
       const db2 = openDatabase(dbPath);
       expect(runMigrations(db2, () => 1)).toEqual([]); // already applied
       expect(tableNames(db2)).toContain('device_codes');
       db2.close();
+    } finally {
+      rmSync(dbPath, { force: true });
+      rmSync(`${dbPath}-wal`, { force: true });
+      rmSync(`${dbPath}-shm`, { force: true });
+    }
+  });
+
+  it('migration 003 keeps the sign-in artefacts of a version-2 database and makes them follow their app and user', () => {
+    mkdirSync(TMP_DIR, { recursive: true });
+    const dbPath = join(TMP_DIR, `${randomUUID()}.db`);
+    try {
+      const db = openDatabase(dbPath);
+      // A database as an installation that has been signed in to left it: an app, a user, and the
+      // code, refresh token and device code that sign-in produced.
+      db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+        version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);`);
+      for (const migration of MIGRATIONS.filter((m) => m.version <= 2)) {
+        db.exec(migration.sql);
+        db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(
+          migration.version,
+          1,
+        );
+      }
+      db.prepare(
+        `INSERT INTO tenants (id, display_name, issuer, created_at) VALUES (?, 'T', 'iss', 1)`,
+      ).run(TEST_TENANT_ID);
+      db.prepare(
+        `INSERT INTO users (id, tenant_id, user_principal_name, display_name, created_at)
+         VALUES ('legacy-user', ?, 'legacy@example.test', 'Legacy User', 1)`,
+      ).run(TEST_TENANT_ID);
+      db.prepare(
+        `INSERT INTO app_registrations (app_id, tenant_id, display_name, is_confidential, created_at)
+         VALUES ('legacy-app', ?, 'Legacy', 0, 1)`,
+      ).run(TEST_TENANT_ID);
+      db.exec(`
+        INSERT INTO authorization_codes (code, app_id, user_id, redirect_uri, scopes, expires_at, created_at)
+          VALUES ('code-1', 'legacy-app', 'legacy-user', 'http://localhost/cb', 'openid', 9000000000000, 1);
+        INSERT INTO refresh_tokens (token, app_id, user_id, scopes, expires_at, created_at)
+          VALUES ('rt-1', 'legacy-app', 'legacy-user', 'openid', 9000000000000, 1);
+        INSERT INTO device_codes (device_code, user_code, app_id, scopes, expires_at, created_at)
+          VALUES ('dc-1', 'ABCD-EFGH', 'legacy-app', 'openid', 9000000000000, 1);
+      `);
+
+      expect(runMigrations(db, () => 2)).toEqual([3]);
+
+      // Nothing was lost in the rebuild.
+      expect(count(db, 'authorization_codes')).toBe(1);
+      expect(count(db, 'refresh_tokens')).toBe(1);
+      expect(count(db, 'device_codes')).toBe(1);
+
+      // Every reference from a sign-in artefact to an app or a user now cascades.
+      const cascades = (table: string) =>
+        (
+          db.prepare(`PRAGMA foreign_key_list(${table})`).all() as {
+            from: string;
+            on_delete: string;
+          }[]
+        )
+          .filter((fk) => fk.from === 'app_id' || fk.from === 'user_id')
+          .map((fk) => `${fk.from}:${fk.on_delete}`)
+          .sort();
+      expect(cascades('authorization_codes')).toEqual(['app_id:CASCADE', 'user_id:CASCADE']);
+      expect(cascades('refresh_tokens')).toEqual(['app_id:CASCADE', 'user_id:CASCADE']);
+      expect(cascades('device_codes')).toEqual(['app_id:CASCADE']);
+
+      // And the deletes that used to fail with FOREIGN KEY constraint failed now take the rows along.
+      db.prepare('DELETE FROM app_registrations WHERE app_id = ?').run('legacy-app');
+      expect(count(db, 'authorization_codes')).toBe(0);
+      expect(count(db, 'refresh_tokens')).toBe(0);
+      expect(count(db, 'device_codes')).toBe(0);
+      db.prepare('DELETE FROM users WHERE id = ?').run('legacy-user');
+      db.close();
     } finally {
       rmSync(dbPath, { force: true });
       rmSync(`${dbPath}-wal`, { force: true });

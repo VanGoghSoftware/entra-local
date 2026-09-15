@@ -1173,3 +1173,69 @@ describe('admin-created app signs in (#11 criterion 9)', () => {
     expect(body.id_token).toMatch(/.+/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Deleting an app or a user that took part in a sign-in
+// ---------------------------------------------------------------------------
+describe('admin delete after sign-in', () => {
+  /** Sign Alice in to the SPA and redeem the code, so a code and a refresh token reference both. */
+  async function signInAndRedeem(app: TestApp): Promise<void> {
+    const verifier = randomBytes(32).toString('base64url');
+    const result = await signInAndGetCode(app, { codeChallenge: s256(verifier) });
+    const token = await app.inject({
+      method: 'POST',
+      url: TOKEN_PATH,
+      headers: FORM_HEADERS,
+      payload: form({
+        grant_type: 'authorization_code',
+        code: result.code,
+        redirect_uri: REDIRECT,
+        client_id: SPA,
+        code_verifier: verifier,
+      }),
+    });
+    expect(token.statusCode).toBe(200);
+    expect((token.json() as { refresh_token?: string }).refresh_token).toMatch(/.+/);
+  }
+
+  function rowsReferencing(app: TestApp, table: string, column: string, id: string): number {
+    const row = app.app.store.db
+      .prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column} = ?`)
+      .get(id) as { n: number };
+    return row.n;
+  }
+
+  it('an app that issued codes, refresh tokens and device codes can be deleted', async () => {
+    ctx = await buildTestApp();
+    await signInAndRedeem(ctx);
+    // A pending device code, as a CLI that never finished its sign-in leaves behind.
+    ctx.app.store.db
+      .prepare(
+        `INSERT INTO device_codes (device_code, user_code, app_id, scopes, expires_at, created_at)
+         VALUES ('dc-1', 'ABCD-EFGH', ?, 'openid', 9000000000000, 1)`,
+      )
+      .run(SPA);
+
+    const del = await ctx.inject({ method: 'DELETE', url: `/admin/api/apps/${SPA}` });
+    expect(del.statusCode).toBe(204);
+    const gone = await ctx.inject({ method: 'GET', url: `/admin/api/apps/${SPA}` });
+    expect(gone.statusCode).toBe(404);
+    for (const table of ['authorization_codes', 'refresh_tokens', 'device_codes']) {
+      expect(rowsReferencing(ctx, table, 'app_id', SPA), table).toBe(0);
+    }
+  });
+
+  it('a user who signed in can be deleted', async () => {
+    ctx = await buildTestApp();
+    await signInAndRedeem(ctx);
+
+    const del = await ctx.inject({
+      method: 'DELETE',
+      url: `/admin/api/users/${SEED.userAliceId}`,
+    });
+    expect(del.statusCode).toBe(204);
+    for (const table of ['authorization_codes', 'refresh_tokens']) {
+      expect(rowsReferencing(ctx, table, 'user_id', SEED.userAliceId), table).toBe(0);
+    }
+  });
+});
