@@ -25,6 +25,7 @@ function makeApp(over: Partial<App> = {}): App {
     groupMembershipClaims: 'None',
     groupOverageLimit: null,
     appRoleAssignmentRequired: false,
+    appOnlyRoleAssignmentRequired: false,
     createdAt: '2026-06-22T00:00:00.000Z',
     ...over,
   };

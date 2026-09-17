@@ -127,8 +127,23 @@ function toGraphGroup(group: Group, context?: string): GraphGroup {
   };
 }
 
+/** An assignment held by a directory principal — the only kind Graph lists (see below). */
+type DirectoryAppRoleAssignment = AppRoleAssignment & { principalType: 'User' | 'Group' };
+
+/**
+ * Graph lists assignments held by **directory** principals. An assignment held by a client
+ * application is an admin-API and portal surface only: the roadmap defers broader Graph app-role
+ * surfaces, and this emulator has no service-principal objects to name such a principal with.
+ */
+function isDirectoryAssignment(a: AppRoleAssignment): a is DirectoryAppRoleAssignment {
+  return a.principalType !== 'Application';
+}
+
 /** Map a store assignment to the Graph shape, resolving the display names it carries. */
-function toGraphAppRoleAssignment(store: Store, a: AppRoleAssignment): GraphAppRoleAssignment {
+function toGraphAppRoleAssignment(
+  store: Store,
+  a: DirectoryAppRoleAssignment,
+): GraphAppRoleAssignment {
   const principalDisplayName =
     a.principalType === 'User'
       ? store.users.getById(a.principalId)?.displayName
@@ -407,7 +422,7 @@ export function createGraphHandlers(deps: GraphDeps): GraphHandlers {
         sendGraphError(reply, 404, 'Request_ResourceNotFound', 'The signed-in user was not found.');
         return;
       }
-      const items = store.appRoleAssignments.listForUser(claims.oid);
+      const items = store.appRoleAssignments.listForUser(claims.oid).filter(isDirectoryAssignment);
       sendCollection(
         request,
         reply,
@@ -432,7 +447,7 @@ export function createGraphHandlers(deps: GraphDeps): GraphHandlers {
         );
         return;
       }
-      const items = store.appRoleAssignments.listForUser(user.id);
+      const items = store.appRoleAssignments.listForUser(user.id).filter(isDirectoryAssignment);
       sendCollection(
         request,
         reply,
@@ -456,7 +471,7 @@ export function createGraphHandlers(deps: GraphDeps): GraphHandlers {
         );
         return;
       }
-      const items = store.appRoleAssignments.listForGroup(id);
+      const items = store.appRoleAssignments.listForGroup(id).filter(isDirectoryAssignment);
       sendCollection(
         request,
         reply,
@@ -480,7 +495,7 @@ export function createGraphHandlers(deps: GraphDeps): GraphHandlers {
         );
         return;
       }
-      const items = store.appRoleAssignments.listForApp(id);
+      const items = store.appRoleAssignments.listForApp(id).filter(isDirectoryAssignment);
       sendCollection(
         request,
         reply,

@@ -20,6 +20,7 @@ import { useShell } from '../hooks/useToast';
 import { useEmulator } from '../components/EmulatorContext';
 import { browserSnippet, deriveGraphBase, nodeSnippet, snippetValues } from '../lib/msalSnippet';
 import { copyText } from '../lib/format';
+import { AppApplicationAssignmentList } from './AppApplicationAssignments';
 import { AppRoleAssignmentList } from './AppRoleAssignments';
 import { Banner } from '../components/Banner';
 import { Button } from '../components/Button';
@@ -102,6 +103,9 @@ export function AppDetail(): JSX.Element {
             {section === 'scopes' && <ScopeList app={app} onChange={reload} />}
             {section === 'roles' && <AppRoleList app={app} onChange={reload} />}
             {section === 'assignments' && <AppRoleAssignmentList app={app} onChange={reload} />}
+            {section === 'applications' && (
+              <AppApplicationAssignmentList app={app} onChange={reload} />
+            )}
             {section === 'tokens' && <TokenConfigCard app={app} onSaved={reload} />}
             {section === 'msal' && <MsalSnippet app={app} />}
             {section === 'delete' && (
@@ -121,6 +125,7 @@ type AppDetailSection =
   | 'scopes'
   | 'roles'
   | 'assignments'
+  | 'applications'
   | 'tokens'
   | 'msal'
   | 'delete';
@@ -132,6 +137,7 @@ const APP_DETAIL_SECTIONS: { id: AppDetailSection; label: string }[] = [
   { id: 'scopes', label: 'Expose an API' },
   { id: 'roles', label: 'App roles' },
   { id: 'assignments', label: 'Users and groups' },
+  { id: 'applications', label: 'Applications' },
   { id: 'tokens', label: 'Token configuration' },
   { id: 'msal', label: 'MSAL configuration' },
   { id: 'delete', label: 'Delete' },

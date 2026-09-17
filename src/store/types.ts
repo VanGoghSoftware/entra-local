@@ -83,6 +83,11 @@ export interface AppRegistration {
   groupOverageLimit: number | null;
   /** Entra's "User assignment required?": refuse sign-in for users without an app role assignment. */
   appRoleAssignmentRequired: boolean;
+  /**
+   * Opt in to assignment-based app-only `roles` on this resource: a client application gets the
+   * roles it is assigned instead of #8's auto-grant of every enabled `Application` role.
+   */
+  appOnlyRoleAssignmentRequired: boolean;
   createdAt: number;
 }
 
@@ -134,6 +139,7 @@ export interface NewApp {
   groupMembershipClaims?: GroupMembershipClaims;
   groupOverageLimit?: number | null;
   appRoleAssignmentRequired?: boolean;
+  appOnlyRoleAssignmentRequired?: boolean;
 }
 
 export interface AppUpdate {
@@ -144,6 +150,7 @@ export interface AppUpdate {
   groupMembershipClaims?: GroupMembershipClaims;
   groupOverageLimit?: number | null;
   appRoleAssignmentRequired?: boolean;
+  appOnlyRoleAssignmentRequired?: boolean;
 }
 
 export interface ScopeUpdate {
@@ -220,9 +227,13 @@ export interface NewRole {
 }
 
 /** Who an app role is assigned to. */
-export type AppRolePrincipalType = 'User' | 'Group';
+/**
+ * Who can hold an app role. `Application` is a client app registration — this emulator has no
+ * service-principal objects, so an application principal is named by its `app_id`.
+ */
+export type AppRolePrincipalType = 'User' | 'Group' | 'Application';
 
-/** An app role held by a user or a group. `appId` is the app that defines the role (the resource). */
+/** An app role held by a principal. `appId` is the app that defines the role (the resource). */
 export interface AppRoleAssignment {
   id: string;
   appId: string;

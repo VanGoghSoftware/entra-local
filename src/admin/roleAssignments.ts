@@ -15,7 +15,9 @@ export function describeAssignment(
   const principalDisplayName =
     assignment.principalType === 'User'
       ? store.users.getById(assignment.principalId)?.displayName
-      : store.groups.getById(assignment.principalId)?.displayName;
+      : assignment.principalType === 'Group'
+        ? store.groups.getById(assignment.principalId)?.displayName
+        : store.apps.getByAppId(assignment.principalId)?.displayName;
   return toAppRoleAssignmentDto(
     assignment,
     role?.value ?? assignment.roleId,

@@ -51,7 +51,7 @@ describe('store plugin: migrations (criterion 1)', () => {
           version: number;
         }[]
       ).map((r) => r.version);
-      expect(versions).toEqual([1, 2, 3, 4]);
+      expect(versions).toEqual([1, 2, 3, 4, 5]);
     } finally {
       await ctx.close();
     }
@@ -62,7 +62,7 @@ describe('store plugin: migrations (criterion 1)', () => {
     const dbPath = join(TMP_DIR, `${randomUUID()}.db`);
     try {
       const db1 = openDatabase(dbPath);
-      expect(runMigrations(db1, () => 1)).toEqual([1, 2, 3, 4]);
+      expect(runMigrations(db1, () => 1)).toEqual([1, 2, 3, 4, 5]);
       db1.close();
 
       const db2 = openDatabase(dbPath);
@@ -99,7 +99,7 @@ describe('store plugin: migrations (criterion 1)', () => {
          VALUES ('legacy-app', ?, 'Legacy', 0, 1)`,
       ).run(TEST_TENANT_ID);
 
-      expect(runMigrations(db, () => 2)).toEqual([3, 4]);
+      expect(runMigrations(db, () => 2)).toEqual([3, 4, 5]);
       expect(tableNames(db)).toContain('app_role_assignments');
       const row = db
         .prepare('SELECT app_role_assignment_required AS r FROM app_registrations WHERE app_id = ?')
@@ -149,7 +149,7 @@ describe('store plugin: migrations (criterion 1)', () => {
           VALUES ('dc-1', 'ABCD-EFGH', 'legacy-app', 'openid', 9000000000000, 1);
       `);
 
-      expect(runMigrations(db, () => 2)).toEqual([4]);
+      expect(runMigrations(db, () => 2)).toEqual([4, 5]);
 
       // Nothing was lost in the rebuild.
       expect(count(db, 'authorization_codes')).toBe(1);
@@ -177,6 +177,81 @@ describe('store plugin: migrations (criterion 1)', () => {
       expect(count(db, 'refresh_tokens')).toBe(0);
       expect(count(db, 'device_codes')).toBe(0);
       db.prepare('DELETE FROM users WHERE id = ?').run('legacy-user');
+      db.close();
+    } finally {
+      rmSync(dbPath, { force: true });
+      rmSync(`${dbPath}-wal`, { force: true });
+      rmSync(`${dbPath}-shm`, { force: true });
+    }
+  });
+
+  it('migration 005 keeps the assignments of a version-4 database and opens the table to applications', () => {
+    mkdirSync(TMP_DIR, { recursive: true });
+    const dbPath = join(TMP_DIR, `${randomUUID()}.db`);
+    try {
+      const db = openDatabase(dbPath);
+      // A database as an installation with user assignments left it: an app, a role, a user and
+      // the assignment between them.
+      db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+        version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);`);
+      for (const migration of MIGRATIONS.filter((m) => m.version <= 4)) {
+        db.exec(migration.sql);
+        db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(
+          migration.version,
+          1,
+        );
+      }
+      db.prepare(
+        `INSERT INTO tenants (id, display_name, issuer, created_at) VALUES (?, 'T', 'iss', 1)`,
+      ).run(TEST_TENANT_ID);
+      db.prepare(
+        `INSERT INTO users (id, tenant_id, user_principal_name, display_name, created_at)
+         VALUES ('legacy-user', ?, 'legacy@example.test', 'Legacy User', 1)`,
+      ).run(TEST_TENANT_ID);
+      db.prepare(
+        `INSERT INTO app_registrations (app_id, tenant_id, display_name, is_confidential, created_at)
+         VALUES ('legacy-api', ?, 'Legacy API', 0, 1)`,
+      ).run(TEST_TENANT_ID);
+      db.prepare(
+        `INSERT INTO app_registrations (app_id, tenant_id, display_name, is_confidential, created_at)
+         VALUES ('legacy-daemon', ?, 'Legacy Daemon', 1, 1)`,
+      ).run(TEST_TENANT_ID);
+      db.exec(`
+        INSERT INTO app_roles (id, app_id, value, display_name, allowed_member_types, is_enabled)
+          VALUES ('role-1', 'legacy-api', 'Tasks.Read', 'Read', 'User,Application', 1);
+        INSERT INTO app_role_assignments (id, app_id, role_id, user_id, created_at)
+          VALUES ('assign-1', 'legacy-api', 'role-1', 'legacy-user', 1);
+      `);
+
+      expect(runMigrations(db, () => 2)).toEqual([5]);
+
+      // The existing assignment survived the rebuild, and the new column defaulted.
+      expect(count(db, 'app_role_assignments')).toBe(1);
+      const app = db
+        .prepare(
+          'SELECT app_only_role_assignment_required AS r FROM app_registrations WHERE app_id = ?',
+        )
+        .get('legacy-api') as { r: number };
+      expect(app.r).toBe(0);
+
+      // An application can now hold the role, and the widened CHECK still allows only one principal.
+      db.prepare(
+        `INSERT INTO app_role_assignments (id, app_id, role_id, client_app_id, created_at)
+         VALUES ('assign-2', 'legacy-api', 'role-1', 'legacy-daemon', 2)`,
+      ).run();
+      expect(count(db, 'app_role_assignments')).toBe(2);
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO app_role_assignments (id, app_id, role_id, user_id, client_app_id, created_at)
+             VALUES ('assign-3', 'legacy-api', 'role-1', 'legacy-user', 'legacy-daemon', 3)`,
+          )
+          .run(),
+      ).toThrow();
+
+      // And the application assignment follows the client app out.
+      db.prepare('DELETE FROM app_registrations WHERE app_id = ?').run('legacy-daemon');
+      expect(count(db, 'app_role_assignments')).toBe(1);
       db.close();
     } finally {
       rmSync(dbPath, { force: true });

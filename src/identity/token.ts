@@ -11,7 +11,7 @@ import {
   isAssignmentRequiredAndMissing,
 } from './assignmentRequired.js';
 import { authenticateClient, field, type Body } from './clientAuth.js';
-import { autoGrantedRoles, resolveClientCredentialScope } from './clientCredentials.js';
+import { appOnlyRoles, resolveClientCredentialScope } from './clientCredentials.js';
 import { DEVICE_CODE_GRANT, handleDeviceCodeGrant } from './deviceCode.js';
 import { sendOAuthError } from './oauthErrors.js';
 
@@ -305,7 +305,7 @@ async function handleClientCredentials(
     return;
   }
   const { aud, resourceApp } = resolution.resolved;
-  const roles = autoGrantedRoles(resourceApp, ctx.store);
+  const roles = appOnlyRoles(resourceApp, app, ctx.store);
 
   const tokenResponse = await ctx.tokenService.buildTokenResponse({
     app,

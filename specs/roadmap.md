@@ -77,6 +77,7 @@ reaching the full v1.0 acceptance bar in [`global-spec.md` §15](global-spec.md#
 | 25 | Trust-cert CLI command | `trust`/`untrust`/`cert-path`/`show-cert` subcommands to trust the dev cert (print by default, `--apply` to execute); exposed by the SEA binary | – | 1, 14, 17 | ✅ |
 | 26 | Local domains (subdomains + wildcard cert + hosts CLI) | Serve the emulator under `*.entra.localhost` with `login.`/`portal.`/`graph.` subdomains on one `:8443` listener routed by `Host` header, a wildcard cert, and a cross-platform `hosts` CLI command; `localhost` stays a compat origin | ✓ | 1, 4, 10, 12, 25 | ⬜ |
 | xx | App role assignments | Assign app roles to users/groups; `roles` on ID + delegated tokens; "assignment required" (AADSTS50105); admin API, portal, read-only Graph | ✓ | 2, 5, 6, 10, 11, 12 | ✅ |
+| xx | Application role assignments | Assign app roles to **client applications**; per-resource opt-in deriving app-only `roles` from assignments instead of #8's auto-grant; admin API, portal | ✓ | 8, 11, 12, app role assignments | ✅ |
 
 ## Iteration 3 — Sample applications
 **Outcome:** minimal, runnable MSAL sample apps across the major platforms that authenticate

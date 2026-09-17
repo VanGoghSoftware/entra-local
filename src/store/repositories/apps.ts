@@ -69,6 +69,7 @@ function mapApp(row: Row): AppRegistration {
     groupMembershipClaims: normalizeGroupClaims(optStr(row, 'group_membership_claims')),
     groupOverageLimit: optNum(row, 'group_overage_limit'),
     appRoleAssignmentRequired: asBool(row, 'app_role_assignment_required'),
+    appOnlyRoleAssignmentRequired: asBool(row, 'app_only_role_assignment_required'),
     createdAt: reqNum(row, 'created_at'),
   };
 }
@@ -161,8 +162,8 @@ export function createAppsRepository(db: Database, clock: Clock): AppsRepository
     `INSERT INTO app_registrations
        (app_id, tenant_id, display_name, is_confidential, app_id_uri,
         optional_claims, group_membership_claims, group_overage_limit,
-        app_role_assignment_required, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        app_role_assignment_required, app_only_role_assignment_required, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const deleteApp = db.prepare('DELETE FROM app_registrations WHERE app_id = ?');
 
@@ -257,6 +258,7 @@ export function createAppsRepository(db: Database, clock: Clock): AppsRepository
         input.groupMembershipClaims ?? 'None',
         input.groupOverageLimit ?? null,
         fromBool(input.appRoleAssignmentRequired ?? false),
+        fromBool(input.appOnlyRoleAssignmentRequired ?? false),
         clock(),
       );
       return repo.getByAppId(appId) as AppRegistration;
@@ -293,6 +295,10 @@ export function createAppsRepository(db: Database, clock: Clock): AppsRepository
       if (patch.appRoleAssignmentRequired !== undefined) {
         sets.push('app_role_assignment_required = ?');
         values.push(fromBool(patch.appRoleAssignmentRequired));
+      }
+      if (patch.appOnlyRoleAssignmentRequired !== undefined) {
+        sets.push('app_only_role_assignment_required = ?');
+        values.push(fromBool(patch.appOnlyRoleAssignmentRequired));
       }
       if (sets.length > 0) {
         db.prepare(`UPDATE app_registrations SET ${sets.join(', ')} WHERE app_id = ?`).run(

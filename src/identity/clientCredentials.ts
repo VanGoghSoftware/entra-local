@@ -90,10 +90,30 @@ export function resolveClientCredentialScope(
 }
 
 /**
- * Auto-grant model (MVP): the `roles` claim is the `value`s of all **enabled** `app_roles` on the
- * resolved resource app whose `allowed_member_types` includes `Application`. Graph or no such roles
- * → empty array. There is no per-client assignment table (documented divergence from real Entra,
- * analogous to the auto-consent decision).
+ * The `roles` claim of an app-only token, in whichever model the resource app is configured for.
+ *
+ * By default that is #8's auto-grant, below. When the resource sets `appOnlyRoleAssignmentRequired`
+ * the claim comes from the **calling client's** own app role assignments instead, and is empty when
+ * it holds none — which is what lets a developer produce the caller their API has to refuse. Graph
+ * has no registration and therefore no roles either way.
+ */
+export function appOnlyRoles(
+  resourceApp: AppRegistration | null,
+  clientApp: AppRegistration,
+  store: Store,
+): string[] {
+  if (!resourceApp) return [];
+  if (resourceApp.appOnlyRoleAssignmentRequired) {
+    return store.appRoleAssignments.rolesForClient(resourceApp.appId, clientApp.appId);
+  }
+  return autoGrantedRoles(resourceApp, store);
+}
+
+/**
+ * Auto-grant model (MVP, the default): the `roles` claim is the `value`s of all **enabled**
+ * `app_roles` on the resolved resource app whose `allowed_member_types` includes `Application`,
+ * for any client that names the right audience. Graph or no such roles → empty array. A resource
+ * that wants per-client rights opts in to assignments (see {@link appOnlyRoles}).
  */
 export function autoGrantedRoles(resourceApp: AppRegistration | null, store: Store): string[] {
   if (!resourceApp) return [];

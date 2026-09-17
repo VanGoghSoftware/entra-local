@@ -61,7 +61,9 @@ surface MSAL needs for the most common developer scenarios. Treat anything not l
 - **Web app** — Authorization Code with a confidential client secret.
 - **Role-based authorization** — app roles assigned to users and groups appear as `roles` in ID and
   delegated access tokens; optional "assignment required" refusal (AADSTS50105).
-- **Daemon / service** — Client Credentials (app-only token with app roles).
+- **Daemon / service** — Client Credentials (app-only token with app roles). Every client gets the
+  resource's enabled `Application` roles by default; opt a resource in to per-client assignments to
+  test the caller your API has to refuse.
 - **CLI / device** — Device Code flow (RFC 8628).
 - **Token refresh** — rotating refresh tokens.
 - **Protected API + minimal Graph** — call `/me`, `/users`, `/groups` with the access token.

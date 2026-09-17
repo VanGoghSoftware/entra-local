@@ -96,6 +96,7 @@ export function registerAppRoutes(app: FastifyInstance): void {
       isConfidential: body.isConfidential,
       appIdUri: body.appIdUri ?? null,
       appRoleAssignmentRequired: body.appRoleAssignmentRequired,
+      appOnlyRoleAssignmentRequired: body.appOnlyRoleAssignmentRequired,
     };
     const created = store.apps.create(input);
     for (const redirect of body.redirectUris ?? []) {
@@ -292,17 +293,22 @@ export function registerAppRoutes(app: FastifyInstance): void {
       const body = roleAssignmentCreateSchema.parse(request.body);
       const role = store.apps.listRoles(registration.appId).find((r) => r.id === body.roleId);
       if (!role) throw invalidReference(`No role '${body.roleId}' for this app.`, 'roleId');
-      if (!parseAllowedMemberTypes(role.allowedMemberTypes).includes('User')) {
+      // A user and a group hold the same 'User' member type; an application holds 'Application'.
+      const memberType = body.principalType === 'Application' ? 'Application' : 'User';
+      if (!parseAllowedMemberTypes(role.allowedMemberTypes).includes(memberType)) {
+        const holders = memberType === 'Application' ? 'applications' : 'users or groups';
         throw new AdminError(
           'validation_error',
-          `Role '${role.value}' cannot be assigned to users or groups: its allowedMemberTypes do not include 'User'.`,
+          `Role '${role.value}' cannot be assigned to ${holders}: its allowedMemberTypes do not include '${memberType}'.`,
           { target: 'roleId' },
         );
       }
       const principalExists =
         body.principalType === 'User'
           ? store.users.getById(body.principalId) !== undefined
-          : store.groups.getById(body.principalId) !== undefined;
+          : body.principalType === 'Group'
+            ? store.groups.getById(body.principalId) !== undefined
+            : store.apps.getByAppId(body.principalId) !== undefined;
       if (!principalExists) {
         throw invalidReference(
           `No ${body.principalType.toLowerCase()} with id '${body.principalId}'.`,

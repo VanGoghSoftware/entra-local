@@ -183,6 +183,7 @@ export interface AppDto {
   groupMembershipClaims: GroupMembershipClaims;
   groupOverageLimit: number | null;
   appRoleAssignmentRequired: boolean;
+  appOnlyRoleAssignmentRequired: boolean;
   createdAt: string;
 }
 
@@ -207,6 +208,7 @@ export function toAppDto(app: AppRegistration, sub: AppSubCollections): AppDto {
     groupMembershipClaims: app.groupMembershipClaims,
     groupOverageLimit: app.groupOverageLimit,
     appRoleAssignmentRequired: app.appRoleAssignmentRequired,
+    appOnlyRoleAssignmentRequired: app.appOnlyRoleAssignmentRequired,
     createdAt: isoFromEpoch(app.createdAt) as string,
   };
 }

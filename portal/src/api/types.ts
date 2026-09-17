@@ -87,9 +87,9 @@ export interface AppRole {
   isEnabled: boolean;
 }
 
-export type PrincipalType = 'User' | 'Group';
+export type PrincipalType = 'User' | 'Group' | 'Application';
 
-/** An app role held by a user or a group (`appId` is the app that defines the role). */
+/** An app role held by a principal (`appId` is the app that defines the role). */
 export interface AppRoleAssignment {
   id: string;
   appId: string;
@@ -127,6 +127,7 @@ export interface App {
   groupMembershipClaims: GroupMembershipClaims;
   groupOverageLimit: number | null;
   appRoleAssignmentRequired: boolean;
+  appOnlyRoleAssignmentRequired: boolean;
   createdAt: string;
 }
 

@@ -143,14 +143,35 @@ inherit), and the value lands in:
 
 A user with no assignment gets **no `roles` claim** (Entra emits none, never `[]`, on a user token).
 Listing `roles` under `optionalClaims` does nothing and is logged as unsupported with a pointer here.
-App-only (client-credentials) tokens are unchanged: every enabled `Application`-type role of the
-resource is auto-granted.
+App-only (client-credentials) tokens follow their own rule, below.
 
 **Assignment required.** Turn on `appRoleAssignmentRequired` on the client app (portal: *Users and
 groups* → *Assignment required*) and a user without an assignment is refused at sign-in with
 Entra's `AADSTS50105` shape: `/authorize` redirects with `error=access_denied` (also for
 `prompt=none`), the `authorization_code` and `refresh_token` grants answer `400 invalid_grant` with
 `error_codes: [50105]`, and device-code approval denies the code. Default off.
+
+---
+
+## App roles on app-only tokens — auto-grant, or assignments
+
+By default a client-credentials token carries **every enabled `Application`-type role of the
+resource**, for any client that names the right audience. That is deliberate — the roadmap defers
+consent modelling for a local dev tool — and it means the happy path of an app-only API is testable
+out of the box, while the refusal is not: no caller can be made to lack a role.
+
+Turn on `appOnlyRoleAssignmentRequired` on the **resource** app (portal: *Applications* →
+*Assignment required*) and the claim comes from that resource's app role assignments instead:
+
+- a client that is assigned a role gets exactly the enabled `Application` roles it holds;
+- a client with no assignment gets an **empty** `roles` claim — the token is still issued, so the
+  API it calls is what refuses it, which is usually the thing being tested.
+
+Assign with `principalType: "Application"` and the client's app id. Default off, so an existing
+installation keeps the auto-grant.
+
+**Divergence:** real Entra refuses the `.default` request outright when nothing is consented, so
+there the client never reaches the API at all.
 
 ---
 
@@ -237,7 +258,7 @@ The same configuration is available over the Admin REST API (`/admin/api`):
 - `PATCH /admin/api/apps/{id}` — set `optionalClaims`, `groupMembershipClaims`, `groupOverageLimit`.
 - `POST /admin/api/apps/{id}/token-preview` — body `{ "userId": "...", "tokenType": "idToken" | "accessToken" }`.
 - `POST /admin/api/apps/{id}/token-generate` — body `{ "userId": "...", "tokenType": "idToken" | "accessToken", "tokenVariant": "valid" | "expired" | "invalidSignature" }`; returns the local-development token and its decoded claims. `tokenVariant` defaults to `valid`.
-- `GET|POST /admin/api/apps/{id}/roleAssignments`, `DELETE /admin/api/apps/{id}/roleAssignments/{assignmentId}` — body `{ "roleId", "principalType": "User" | "Group", "principalId" }`.
+- `GET|POST /admin/api/apps/{id}/roleAssignments`, `DELETE /admin/api/apps/{id}/roleAssignments/{assignmentId}` — body `{ "roleId", "principalType": "User" | "Group" | "Application", "principalId" }`. For `Application` the `principalId` is the client app's id.
 - `GET /admin/api/users/{id}/appRoleAssignments` (direct only), `GET /admin/api/groups/{id}/appRoleAssignments`.
-- `appRoleAssignmentRequired` on `POST`/`PATCH /admin/api/apps/{id}`.
-- Graph (read-only): `GET /graph/v1.0/me/appRoleAssignments`, `/users/{id}/appRoleAssignments`, `/groups/{id}/appRoleAssignments`, `/servicePrincipals/{appId}/appRoleAssignedTo` — `resourceId` is the resource app's `appId` (the emulator has no service principals).
+- `appRoleAssignmentRequired` and `appOnlyRoleAssignmentRequired` on `POST`/`PATCH /admin/api/apps/{id}`.
+- Graph (read-only): `GET /graph/v1.0/me/appRoleAssignments`, `/users/{id}/appRoleAssignments`, `/groups/{id}/appRoleAssignments`, `/servicePrincipals/{appId}/appRoleAssignedTo` — `resourceId` is the resource app's `appId` (the emulator has no service principals). Application assignments are not listed here: Graph carries directory principals, and broader Graph app-role surfaces are deferred by the roadmap.

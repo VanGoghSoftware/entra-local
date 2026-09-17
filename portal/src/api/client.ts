@@ -232,4 +232,5 @@ export interface AppBody {
   isConfidential?: boolean;
   appIdUri?: string | null;
   appRoleAssignmentRequired?: boolean;
+  appOnlyRoleAssignmentRequired?: boolean;
 }

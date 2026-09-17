@@ -106,6 +106,7 @@ export const appCreateSchema = z.object({
     )
     .optional(),
   appRoleAssignmentRequired: z.boolean().default(false),
+  appOnlyRoleAssignmentRequired: z.boolean().default(false),
 });
 
 export const appPatchSchema = z
@@ -117,6 +118,7 @@ export const appPatchSchema = z
     groupMembershipClaims: groupMembershipClaimsSchema,
     groupOverageLimit: z.coerce.number().int().min(1).nullable(),
     appRoleAssignmentRequired: z.boolean(),
+    appOnlyRoleAssignmentRequired: z.boolean(),
   })
   .partial();
 
@@ -160,7 +162,7 @@ export const rolePatchSchema = z
 
 export const roleAssignmentCreateSchema = z.object({
   roleId: z.string().min(1),
-  principalType: z.enum(['User', 'Group']),
+  principalType: z.enum(['User', 'Group', 'Application']),
   principalId: z.string().min(1),
 });
 

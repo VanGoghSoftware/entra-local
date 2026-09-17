@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { api, ApiError } from '../api/client';
-import type { App, AppRoleAssignment, Group, Paged, PrincipalType, User } from '../api/types';
+import type { App, AppRoleAssignment, Paged } from '../api/types';
 import { useAsync } from '../hooks/useAsync';
 import { useShell } from '../hooks/useToast';
 import { Button } from '../components/Button';
@@ -9,11 +9,12 @@ import { IdChip } from '../components/IdChip';
 import { SkeletonRows } from '../components/States';
 
 /**
- * "Users and groups": who holds which app role on this app, plus Entra's "assignment required"
- * switch. Only enabled roles whose `allowedMemberTypes` include `User` can be assigned; the API
- * refuses anything else, and the picker never offers it.
+ * "Applications": which client applications hold which app role on this app, plus the switch that
+ * makes app-only tokens carry the assigned roles instead of every enabled `Application` role. Only
+ * enabled roles whose `allowedMemberTypes` include `Application` can be assigned; the API refuses
+ * anything else, and the picker never offers it.
  */
-export function AppRoleAssignmentList({
+export function AppApplicationAssignmentList({
   app,
   onChange,
 }: {
@@ -24,37 +25,36 @@ export function AppRoleAssignmentList({
   const load = useCallback(() => api.listRoleAssignments(app.id), [app.id]);
   const { data: assignments, loading, reload } = useAsync<AppRoleAssignment[]>(load, [app.id]);
 
+  const loadClients = useCallback(() => api.listApps({ top: 200 }), []);
+  const { data: clients } = useAsync<Paged<App>>(loadClients, []);
+
   const [adding, setAdding] = useState(false);
-  const [principalType, setPrincipalType] = useState<PrincipalType>('User');
-  const [principalId, setPrincipalId] = useState('');
+  const [clientId, setClientId] = useState('');
   const [roleId, setRoleId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
 
-  const loadPrincipals = useCallback(
-    (): Promise<Paged<User> | Paged<Group>> =>
-      principalType === 'User' ? api.listUsers({ top: 200 }) : api.listGroups({ top: 200 }),
-    [principalType],
-  );
-  const { data: principals } = useAsync<Paged<User> | Paged<Group>>(loadPrincipals, [
-    principalType,
-  ]);
-
   const assignableRoles = app.appRoles.filter(
-    (role) => role.isEnabled && role.allowedMemberTypes.includes('User'),
+    (role) => role.isEnabled && role.allowedMemberTypes.includes('Application'),
   );
-  // Assignments held by a client application belong to the Applications section, not this one.
-  const directoryAssignments = assignments?.filter(
-    (assignment) => assignment.principalType !== 'Application',
+  const applicationAssignments = assignments?.filter(
+    (assignment) => assignment.principalType === 'Application',
   );
+  // Only a confidential client can use the client-credentials grant, so only one can hold an
+  // app-only role in a way that is ever observable.
+  const assignableClients = (clients?.value ?? []).filter((candidate) => candidate.isConfidential);
 
   async function add(): Promise<void> {
     setBusy(true);
     setError(undefined);
     try {
-      await api.addRoleAssignment(app.id, { roleId, principalType, principalId });
+      await api.addRoleAssignment(app.id, {
+        roleId,
+        principalType: 'Application',
+        principalId: clientId,
+      });
       toast('Role assigned.');
-      setPrincipalId('');
+      setClientId('');
       setRoleId('');
       setAdding(false);
       reload();
@@ -79,8 +79,12 @@ export function AppRoleAssignmentList({
 
   async function toggleRequired(next: boolean): Promise<void> {
     try {
-      await api.updateApp(app.id, { appRoleAssignmentRequired: next });
-      toast(next ? 'Assignment is now required to sign in.' : 'Assignment is no longer required.');
+      await api.updateApp(app.id, { appOnlyRoleAssignmentRequired: next });
+      toast(
+        next
+          ? 'App-only roles now come from assignments.'
+          : 'App-only roles are auto-granted again.',
+      );
       onChange();
     } catch {
       toast("Couldn't update the setting.", 'bad');
@@ -90,7 +94,7 @@ export function AppRoleAssignmentList({
   return (
     <section className="card flush">
       <div className="card-head">
-        <h2 className="h-md">Users and groups</h2>
+        <h2 className="h-md">Applications</h2>
         <Button
           size="sm"
           onClick={() => setAdding((v) => !v)}
@@ -101,18 +105,18 @@ export function AppRoleAssignmentList({
       </div>
       <div className="b-sm" style={{ padding: '12px 16px', display: 'grid', gap: 4 }}>
         <Toggle
-          checked={app.appRoleAssignmentRequired}
+          checked={app.appOnlyRoleAssignmentRequired}
           onChange={(next) => void toggleRequired(next)}
           label={<span>Assignment required</span>}
         />
         <span className="muted">
-          When enabled, users without an assignment are refused at sign-in (AADSTS50105).
+          When enabled, an app-only token carries the roles its client is assigned here. When
+          disabled, every client calling this API gets every enabled <code>Application</code> role.
         </span>
-        {/* The reason a disabled control is disabled belongs beside it, not below the table. */}
         {assignableRoles.length === 0 && (
           <span className="muted">
             <strong>Add assignment</strong> is disabled because this app defines no enabled app role
-            whose member types include <code>User</code>. Create one under{' '}
+            whose member types include <code>Application</code>. Create one under{' '}
             <strong>App roles</strong>.
           </span>
         )}
@@ -121,32 +125,28 @@ export function AppRoleAssignmentList({
         <table className="dt">
           <thead>
             <tr>
-              <th>Principal</th>
-              <th>Type</th>
+              <th>Application</th>
               <th>Role</th>
               <th>Assigned</th>
               <th className="col-actions"></th>
             </tr>
           </thead>
           <tbody>
-            {loading && !assignments && <SkeletonRows rows={2} cols={5} />}
-            {directoryAssignments && directoryAssignments.length === 0 && (
+            {loading && !assignments && <SkeletonRows rows={2} cols={4} />}
+            {applicationAssignments && applicationAssignments.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted b-sm">
-                  No users or groups are assigned. Sign-ins succeed without a `roles` claim.
+                <td colSpan={4} className="muted b-sm">
+                  No applications are assigned.
                 </td>
               </tr>
             )}
-            {directoryAssignments?.map((assignment) => (
+            {applicationAssignments?.map((assignment) => (
               <tr key={assignment.id}>
                 <td>
                   <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     {assignment.principalDisplayName}
-                    <IdChip value={assignment.principalId} title="Principal id" />
+                    <IdChip value={assignment.principalId} title="Client id" />
                   </span>
-                </td>
-                <td>
-                  <span className="chip-plain">{assignment.principalType}</span>
                 </td>
                 <td>
                   <span className="chip-plain">{assignment.roleValue}</span>
@@ -165,27 +165,15 @@ export function AppRoleAssignmentList({
       {adding && (
         <div className="add-row">
           <Select
-            aria-label="Principal type"
-            style={{ flex: '0 0 auto', width: 120 }}
-            value={principalType}
-            onChange={(e) => {
-              setPrincipalType(e.target.value as PrincipalType);
-              setPrincipalId('');
-            }}
-          >
-            <option value="User">User</option>
-            <option value="Group">Group</option>
-          </Select>
-          <Select
-            aria-label="Principal"
+            aria-label="Application"
             style={{ flex: '1 1 180px', minWidth: 160 }}
-            value={principalId}
-            onChange={(e) => setPrincipalId(e.target.value)}
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
           >
             <option value="">Choose…</option>
-            {(principals?.value ?? []).map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.displayName}
+            {assignableClients.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {candidate.displayName}
               </option>
             ))}
           </Select>
@@ -202,7 +190,7 @@ export function AppRoleAssignmentList({
               </option>
             ))}
           </Select>
-          <Button onClick={() => void add()} busy={busy} disabled={!principalId || !roleId}>
+          <Button onClick={() => void add()} busy={busy} disabled={!clientId || !roleId}>
             Assign
           </Button>
         </div>
